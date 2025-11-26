@@ -1,4 +1,3 @@
-from typing import Any
 import requests
 
 from app.config import API_GEO as api_geo, API_SITE as api_site, REGION_ID as DEFAULT_REGION_ID
@@ -243,8 +242,14 @@ class CityAppClient:
             return None
         return resp.json()
 
-    def afisha_events(self, start_date: str, end_date: str,
-                      categoria: str = '', kids: bool | None = None, free: bool | None = None):
+    def afisha_events(
+        self,
+        start_date: str,
+        end_date: str,
+        categoria: str = '',
+        kids: bool | None = None,
+        free: bool | None = None,
+    ):
         """
         События афиши за период — сценарий 2.5 (культурные мероприятия).
         """
