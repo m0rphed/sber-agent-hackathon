@@ -12,6 +12,7 @@ dependencies = [
     "langchain>=1.1.0",
     "langchain-gigachat>=0.3.13a1",
     "langgraph>=1.0.4",
+    "langgraph-checkpoint-sqlite>=3.0.0",
     "numpy>=2.3.5",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.1",
