@@ -25,6 +25,7 @@ def geo_building_search(user_address: str):
 
 def find_an_MFC_by_address(user_address):
     MFC_address = geo_building_search(user_address)
+    MFC_address.json()
     return MFC_address #.get('full_address',[])
 
 if __name__ == '__main__':
