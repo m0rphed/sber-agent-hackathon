@@ -31,7 +31,7 @@ class CityAppClient:
             first_building.get('id'),
             first_building.get('full_address'),
         )
-
+# ---------------- МФЦ ----------------
     def find_nearest_mfc(self, user_address):
         building_id, building_address = self._get_building_id_by_address(
             user_address
@@ -79,6 +79,26 @@ class CityAppClient:
         }
 
 
+# ---------------- АФИША ----------------
+
+    def pensioner_service_category(self):
+        resp = requests.get(f'{self.api_site}/pensioner/services/category/')
+        resp.raise_for_status()
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def pensioner_services(self, district, category: list[str]):
+        resp = requests.get(f'{self.api_site}/pensioner/services/', params = {
+            'category': ','.join(category),
+            'district': district,
+            'count': 10,
+            'page': 1,
+        })
+        return resp.json()
+
+
 if __name__ == '__main__':
     app = CityAppClient()
-    print(app.find_nearest_mfc('Большевиков 68 к1'))
+    print(app.pensioner_services('Невский', ['Вокал', 'Компьютерные курсы']))
