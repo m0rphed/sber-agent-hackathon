@@ -17,7 +17,7 @@ class CityAppClient:
             f'{self.api_geo}/geo/buildings/search/',
             params={
                 'query': user_address,
-                'count': 5,
+                'count': 1,
                 'region_of_search': self.region_id,
             },
             headers={'region': self.region_id},
