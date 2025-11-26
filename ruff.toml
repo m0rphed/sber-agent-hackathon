@@ -1,0 +1,35 @@
+target-version = "py312"
+line-length = 100
+
+[format]
+# 5. Use single quotes in `ruff format`.
+quote-style = "double"
+exclude = ["*.pyi"]
+
+[lint]
+extend-select = [
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes       (ошибки при импортах, неиспользуемые переменные и т.п.)
+    "I",   # isort          (сортировка импортов)
+    "UP",  # pyupgrade      (совместимость и современный синтаксис)
+    "B",   # bugbear        (часто встречающиеся ошибки и баги)
+    "A",   # builtins       (переопределение встроенных имён)
+    "PIE", # flake8-pie
+    "TID", # flake8-tidy-imports
+]
+
+[lint.isort]
+known-first-party = ["app", "src"]
+combine-as-imports = true
+force-sort-within-sections = true
+
+[lint.pyupgrade]
+# Python 3.12
+keep-runtime-typing = false
+
+[lint.per-file-ignores]
+# Разрешить импорт без использования в __init__.py
+"__init__.py" = ["F401"]
+
+# В тестах часто допустимо неиспользуемое имя аргумента
+"tests/**/*.py" = ["ARG002", "B008"]
