@@ -1,17 +1,19 @@
 """
-LangChain Tools для работы с API 'Я Здесь Живу'
+LangChain Tools для работы с API "Я Здесь Живу"
 """
 
 import json
 
 from langchain_core.tools import tool
 
-# Ленивый импорт клиента, чтобы избежать циклических зависимостей
+# ленивый импорт клиента, чтобы избежать циклических зависимостей
 _client = None
 
 
 def _get_client():
-    """Получает singleton клиента API."""
+    """
+    Получает singleton клиента API
+    """
     global _client
     if _client is None:
         from app.api.yazz import CityAppClient
@@ -49,7 +51,7 @@ def find_nearest_mfc_tool(address: str) -> str:
 @tool
 def get_pensioner_categories_tool() -> str:
     """
-    Получить список категорий услуг для пенсионеров.
+    Получить список категорий услуг для пенсионеров
 
     Используй этот инструмент, когда пользователь спрашивает:
     - Какие услуги есть для пенсионеров?
@@ -95,7 +97,7 @@ def get_pensioner_services_tool(district: str, categories: str) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
-# Список всех доступных инструментов
+# список всех доступных инструментов
 ALL_TOOLS = [
     find_nearest_mfc_tool,
     get_pensioner_categories_tool,

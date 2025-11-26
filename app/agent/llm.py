@@ -35,7 +35,6 @@ def get_llm(
 
 
 if __name__ == "__main__":
-    # Простой тест
     llm = get_llm()
     response = llm.invoke("Привет! Расскажи кратко о Санкт-Петербурге.")
     print(response.content)
