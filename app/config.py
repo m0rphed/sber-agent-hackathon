@@ -13,6 +13,11 @@ GIGACHAT_CREDENTIALS        = os.getenv('GIGACHAT_CREDENTIALS', '')
 GIGACHAT_SCOPE              = os.getenv('GIGACHAT_SCOPE', '')
 GIGACHAT_VERIFY_SSL_CERTS   = os.getenv('GIGACHAT_VERIFY_SSL_CERTS', 'false').lower() == 'true'
 
+# Настройки модели
+CHUNK_SIZE = os.getenv('CHUNK_SIZE', '800')
+CHUNK_OVERLAP = os.getenv('CHUNK_OVERLAP', '200')
+TOP_K = os.getenv('TOP_K', '5')
+
 # API "Я Здесь Живу"
 API_GEO     = os.getenv('API_GEO', 'https://yazzh-geo.gate.petersburg.ru')
 API_SITE    = os.getenv('API_SITE', 'https://yazzh.gate.petersburg.ru')
