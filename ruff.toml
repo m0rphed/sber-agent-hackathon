@@ -3,7 +3,7 @@ line-length = 100
 
 [format]
 # 5. Use single quotes in `ruff format`.
-quote-style = "double"
+quote-style = "single"
 exclude = ["*.pyi"]
 
 [lint]
