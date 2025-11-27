@@ -8,6 +8,7 @@ import sqlite3
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.llm import get_llm
 from app.agent.memory import ConversationMemory, get_memory
@@ -20,7 +21,7 @@ with open(SYSTEM_PROMPT_PATH, encoding='utf-8') as f:
     SYSTEM_PROMPT = f.read()
 
 
-# Глобальные объекты для сохранения состояния агента
+# глобальные объекты для сохранения состояния агента
 _db_connection: sqlite3.Connection | None = None
 _checkpointer: SqliteSaver | None = None
 
@@ -46,7 +47,7 @@ def get_checkpointer() -> SqliteSaver:
     return _checkpointer
 
 
-def create_city_agent(with_persistence: bool = False):
+def create_city_agent(with_persistence: bool = False) -> CompiledStateGraph:
     """
     Создаёт агента городского помощника
 
@@ -61,24 +62,24 @@ def create_city_agent(with_persistence: bool = False):
     # создаём ReAct агента с инструментами
     if with_persistence:
         checkpointer = get_checkpointer()
-        agent = create_agent(
+        agent: CompiledStateGraph = create_agent(
             model=llm,
             tools=ALL_TOOLS,
-            prompt=SYSTEM_PROMPT,
+            system_prompt=SYSTEM_PROMPT,
             checkpointer=checkpointer,
         )
     else:
-        agent = create_agent(
+        agent: CompiledStateGraph = create_agent(
             model=llm,
             tools=ALL_TOOLS,
-            prompt=SYSTEM_PROMPT,
+            system_prompt=SYSTEM_PROMPT,
         )
 
     return agent
 
 
 def invoke_agent(
-    agent,
+    agent: CompiledStateGraph,
     user_message: str,
     chat_history: list | None = None,
     thread_id: str | None = None,
@@ -115,7 +116,7 @@ def invoke_agent(
 
 
 def chat_with_persistence(
-    agent,
+    agent: CompiledStateGraph,
     user_message: str,
     thread_id: str,
 ) -> str:
@@ -149,7 +150,7 @@ def chat_with_persistence(
 
 
 def chat_with_memory(
-    agent,
+    agent: CompiledStateGraph,
     user_message: str,
     session_id: str,
     memory: ConversationMemory | None = None,
@@ -180,7 +181,7 @@ def chat_with_memory(
 
 
 def safe_chat(
-    agent,
+    agent: CompiledStateGraph,
     user_message: str,
     session_id: str,
     use_persistence: bool = False,

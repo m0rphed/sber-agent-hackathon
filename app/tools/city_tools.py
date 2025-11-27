@@ -3,8 +3,13 @@ LangChain Tools для работы с API "Я Здесь Живу"
 """
 
 import json
+import logging
 
 from langchain_core.tools import tool
+
+# настраиваем логирование для отладки вызовов tools
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ленивый импорт клиента, чтобы избежать циклических зависимостей
 _client = None
@@ -39,12 +44,16 @@ def find_nearest_mfc_tool(address: str) -> str:
     Returns:
         Информация о ближайшем МФЦ в формате JSON (название, адрес, телефоны, часы работы)
     """
+    logger.info(f'🔧 [TOOL CALL] find_nearest_mfc_tool(address="{address}")')
+
     client = _get_client()
     result = client.find_nearest_mfc(address)
 
     if result is None:
+        logger.warning(f'⚠️ [TOOL RESULT] МФЦ не найден для адреса: {address}')
         return 'К сожалению, не удалось найти МФЦ по указанному адресу. Пожалуйста, уточните адрес.'
 
+    logger.info(f'✅ [TOOL RESULT] Найден МФЦ: {result.get("name", "N/A")}')
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
@@ -61,12 +70,16 @@ def get_pensioner_categories_tool() -> str:
     Returns:
         Список доступных категорий услуг для пенсионеров
     """
+    logger.info('🔧 [TOOL CALL] get_pensioner_categories_tool()')
+
     client = _get_client()
     result = client.pensioner_service_category()
 
     if result is None:
+        logger.warning('⚠️ [TOOL RESULT] Не удалось получить категории')
         return 'Не удалось получить список категорий услуг.'
 
+    logger.info(f'✅ [TOOL RESULT] Получено {len(result) if isinstance(result, list) else 1} категорий')
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
@@ -87,13 +100,17 @@ def get_pensioner_services_tool(district: str, categories: str) -> str:
     Returns:
         Список услуг для пенсионеров в указанном районе
     """
+    logger.info(f'🔧 [TOOL CALL] get_pensioner_services_tool(district="{district}", categories="{categories}")')
+
     client = _get_client()
     category_list = [c.strip() for c in categories.split(',')]
     result = client.pensioner_services(district, category_list)
 
     if result is None:
+        logger.warning(f'⚠️ [TOOL RESULT] Услуги не найдены для района {district}')
         return 'Не удалось найти услуги по указанным параметрам.'
 
+    logger.info(f'✅ [TOOL RESULT] Найдено услуг: {len(result) if isinstance(result, list) else 1}')
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
