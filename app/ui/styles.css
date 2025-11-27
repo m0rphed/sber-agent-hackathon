@@ -1,0 +1,258 @@
+/*
+  Городской помощник - Кастомные стили
+  Редактируйте этот файл для изменения внешнего вида приложения
+*/
+
+/* ========== Переменные (цветовая схема) ========== */
+:root {
+    --primary-color: #1E88E5;        /* Основной синий */
+    --primary-dark: #1565C0;         /* Тёмный синий */
+    --secondary-color: #43A047;      /* Зелёный акцент */
+    --background-color: #F5F7FA;     /* Фон страницы */
+    --surface-color: #FFFFFF;        /* Фон карточек */
+    --text-primary: #212121;         /* Основной текст */
+    --text-secondary: #757575;       /* Вторичный текст */
+    --border-color: #E0E0E0;         /* Границы */
+    --error-color: #E53935;          /* Ошибки */
+    --warning-color: #FB8C00;        /* Предупреждения */
+    --success-color: #43A047;        /* Успех */
+    
+    /* Размеры */
+    --border-radius: 12px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    
+    /* Тени */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+    --shadow-lg: 0 10px 25px rgba(0,0,0,0.15);
+}
+
+/* ========== Основной контейнер ========== */
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    max-width: 900px;
+}
+
+/* ========== Заголовок приложения ========== */
+.app-header {
+    text-align: center;
+    padding: var(--spacing-lg);
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-lg);
+    color: white;
+}
+
+.app-header h1 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 600;
+}
+
+.app-header p {
+    margin: var(--spacing-sm) 0 0 0;
+    opacity: 0.9;
+}
+
+/* ========== Чат-контейнер ========== */
+.chat-container {
+    background: var(--surface-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+/* ========== Сообщения чата ========== */
+.stChatMessage {
+    border-radius: var(--border-radius) !important;
+    margin-bottom: var(--spacing-sm) !important;
+}
+
+/* Сообщения пользователя */
+[data-testid="stChatMessageContent"]:has(.user-message) {
+    background: var(--primary-color) !important;
+    color: white !important;
+}
+
+/* Сообщения ассистента */
+.assistant-message {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+    line-height: 1.6;
+}
+
+/* ========== Поле ввода ========== */
+.stChatInput {
+    border-radius: var(--border-radius) !important;
+}
+
+.stChatInput > div {
+    border-radius: var(--border-radius) !important;
+    border: 2px solid var(--border-color) !important;
+    transition: border-color 0.2s ease;
+}
+
+.stChatInput > div:focus-within {
+    border-color: var(--primary-color) !important;
+    box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.1) !important;
+}
+
+/* ========== Кнопки ========== */
+.stButton > button {
+    background: var(--primary-color) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: var(--border-radius) !important;
+    padding: var(--spacing-sm) var(--spacing-md) !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+
+.stButton > button:hover {
+    background: var(--primary-dark) !important;
+    box-shadow: var(--shadow-md) !important;
+    transform: translateY(-1px);
+}
+
+/* Кнопка очистки чата */
+.clear-chat-btn > button {
+    background: transparent !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border-color) !important;
+}
+
+.clear-chat-btn > button:hover {
+    background: var(--error-color) !important;
+    color: white !important;
+    border-color: var(--error-color) !important;
+}
+
+/* ========== Боковая панель ========== */
+[data-testid="stSidebar"] {
+    background-color: rgb(38, 39, 48) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+    color: rgb(250, 250, 250) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
+    color: rgb(250, 250, 250) !important;
+}
+
+[data-testid="stSidebar"] .block-container {
+    padding-top: var(--spacing-lg);
+}
+
+/* ========== Информационные блоки ========== */
+.info-card {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.info-card h3 {
+    margin: 0 0 var(--spacing-sm) 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.info-card p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* ========== Статус-бейджи ========== */
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.status-online {
+    background: rgba(67, 160, 71, 0.1);
+    color: var(--success-color);
+}
+
+.status-offline {
+    background: rgba(229, 57, 53, 0.1);
+    color: var(--error-color);
+}
+
+/* ========== Спиннер загрузки ========== */
+.stSpinner > div {
+    border-color: var(--primary-color) !important;
+}
+
+/* ========== Примеры вопросов ========== */
+.example-questions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+}
+
+.example-question {
+    background: rgba(30, 136, 229, 0.08);
+    color: var(--primary-color);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: 20px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.example-question:hover {
+    background: rgba(30, 136, 229, 0.15);
+    border-color: var(--primary-color);
+}
+
+/* ========== Аватары ========== */
+.stChatMessage [data-testid="chatAvatarIcon-user"] {
+    background: var(--primary-color) !important;
+}
+
+.stChatMessage [data-testid="chatAvatarIcon-assistant"] {
+    background: var(--secondary-color) !important;
+}
+
+/* ========== Адаптивность ========== */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    .app-header h1 {
+        font-size: 1.5rem;
+    }
+}
+
+/* ========== Скрытие элементов Streamlit ========== */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+/* ========== Анимации ========== */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.stChatMessage {
+    animation: fadeIn 0.3s ease-out;
+}

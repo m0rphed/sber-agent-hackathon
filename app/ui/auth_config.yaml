@@ -1,0 +1,21 @@
+# Authentication configuration [streamlit-authenticator]
+# password should be hashed via Hasher
+
+credentials:
+  usernames:
+    demo:
+      name: Демо Пользователь
+      email: demo@example.com
+      password: $2b$12$CKmnYHo5tWunss64Mgu3k.iJsOL6b1FBVxHjLN.qmp9t/i89Bsya.  # demo123
+    admin:
+      name: Администратор
+      email: admin@example.com
+      password: $2b$12$q7X1kTTwbPtBijGLchYyG.EFtJ2UzKOdcAgd46VR1sBnUrJxDrhCe  # admin123
+
+cookie:
+  name: city_assistant_auth
+  key: random_signature_key_change_in_production  # TODO: тут должна быть случайная строка
+  expiry_days: 1
+
+pre-authorized:
+  emails: []

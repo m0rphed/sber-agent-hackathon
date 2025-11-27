@@ -226,3 +226,6 @@ $RECYCLE.BIN/
 
 docs/
 data/test_data/
+
+# Streamlit secrets (содержит настройки аутентификации)
+.streamlit/secrets.toml
