@@ -3,10 +3,14 @@
 """
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# базовая директория для данных
+DATA_DIR = Path(os.getenv('DATA_DIR', 'data'))
 
 # GigaChat
 GIGACHAT_CREDENTIALS        = os.getenv('GIGACHAT_CREDENTIALS', '')

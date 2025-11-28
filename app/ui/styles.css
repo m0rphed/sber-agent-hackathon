@@ -138,6 +138,16 @@
     background-color: rgb(38, 39, 48) !important;
 }
 
+/* Кнопка открытия sidebar - делаем заметнее */
+[data-testid="stSidebarCollapsedControl"] {
+    background-color: var(--primary-color) !important;
+    border-radius: 0 8px 8px 0 !important;
+}
+
+[data-testid="stSidebarCollapsedControl"] button {
+    color: white !important;
+}
+
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
     color: rgb(250, 250, 250) !important;
 }

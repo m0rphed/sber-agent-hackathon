@@ -2,49 +2,20 @@
 Городской агент-помощник на базе GigaChat
 """
 
-from pathlib import Path
-import sqlite3
-
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.llm import get_llm
 from app.agent.memory import ConversationMemory, get_memory
-from app.config import MEMORY_DB_PATH, SYSTEM_PROMPT_PATH
+from app.agent.persistent_memory import get_checkpointer
+from app.config import SYSTEM_PROMPT_PATH
 from app.services.toxicity import get_toxicity_filter
 from app.tools.city_tools import ALL_TOOLS
 
 SYSTEM_PROMPT = ''
 with open(SYSTEM_PROMPT_PATH, encoding='utf-8') as f:
     SYSTEM_PROMPT = f.read()
-
-
-# глобальные объекты для сохранения состояния агента
-_db_connection: sqlite3.Connection | None = None
-_checkpointer: SqliteSaver | None = None
-
-
-def get_checkpointer() -> SqliteSaver:
-    """
-    Получить SQLite checkpointer для персистентной памяти
-
-    Returns:
-        SqliteSaver для сохранения состояния агента
-    """
-    global _db_connection, _checkpointer
-
-    if _checkpointer is None:
-        # Создаём директорию если не существует
-        db_path = Path(MEMORY_DB_PATH)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Создаём подключение к SQLite
-        _db_connection = sqlite3.connect(str(db_path), check_same_thread=False)
-        _checkpointer = SqliteSaver(_db_connection)
-
-    return _checkpointer
 
 
 def create_city_agent(with_persistence: bool = False) -> CompiledStateGraph:
