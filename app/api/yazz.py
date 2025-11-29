@@ -5,7 +5,6 @@ from app.config import API_GEO as api_geo, API_SITE as api_site, REGION_ID as DE
 
 class CityAppClient:
     def __init__(self, api_geo=api_geo, api_site=api_site, region_id: str = DEFAULT_REGION_ID):
-        # чуть нормализуем, чтобы не было `//` в середине
         self.api_geo = f'{api_geo.rstrip("/")}/api/v2'
         self.api_site = api_site.rstrip('/')
         self.region_id = region_id
@@ -32,7 +31,15 @@ class CityAppClient:
         return (
             first_building.get('id'),
             first_building.get('full_address'),
+            (first_building.get('latitude'), first_building.get('longitude')),
         )
+
+    def _get_district(self):
+        resp = requests.get(f'{api_geo}/geo/district/')
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
 
     # ---------------- МФЦ (2.2) ----------------
     def find_nearest_mfc(self, user_address):
@@ -40,7 +47,7 @@ class CityAppClient:
         if res is None:
             return None
 
-        building_id, building_address = res
+        building_id, building_address, building_coords = res
         if building_id is None:
             return None
 
@@ -264,4 +271,159 @@ class CityAppClient:
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
+        return resp.json()
+
+    def get_news_role(self):
+        resp = requests.get(
+            f'{self.api_site}/news/role/',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def take_news_district(self):
+        resp = requests.get(
+            f'{self.api_site}/news/districts/',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def take_news(
+        self,
+        district: str | None = None,
+        description: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        yazzh_type: str | list[str] | None = None,
+        count: int = 10,
+        page: int = 1,
+    ):
+        params: dict[str, str | int] = {
+            'count': count,
+            'page': page,
+        }
+
+        if district:
+            params['district'] = district
+        if description:
+            params['description'] = description
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+
+        if yazzh_type:
+            if isinstance(yazzh_type, list):
+                # роли через запятую без пробела
+                params['yazzh_type'] = ','.join(yazzh_type)
+            else:
+                params['yazzh_type'] = yazzh_type
+
+        resp = requests.get(
+            f'{self.api_site}/news/',
+            params=params,
+            headers={'region': self.region_id},
+        )
+
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+
+        return resp.json()
+
+    # ---------------- Интересные места по близости -----------------
+    def _get_beautiful_places_area(self):
+        resp = requests.get(f'{api_site}/beautiful_places/area/')
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def _get_beautiful_places_categoria(self):
+        resp = requests.get(f'{api_site}/beautiful_places/categoria/')
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def _get_beautiful_places_keywords(self):
+        resp = requests.get(f'{api_site}/beautiful_places/keywords/')
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_beautiful_places_by_address(
+        self,
+        user_address: str | None,
+        area: str | None,
+        categoria: str | None,
+        keyword: str | None,
+        district,
+        location_latitude: int | float | None,
+        location_longitude: int | float | None,
+        location_radius: int | None = 5,
+        page: int = 1,
+        count: int = 10,
+    ):
+        if user_address:
+            res = self._get_building_id_by_address(user_address)
+
+            if res is None:
+                return None
+            building_id, building_address, building_coords = res
+
+        params = {
+            'page': page,
+            'count': count,
+        }
+
+        if area:
+            if area in self._get_beautiful_places_area()['area']:
+                params['area'] = area
+        if categoria:
+            if categoria in self._get_beautiful_places_categoria()['category']:
+                params['categoria'] = categoria
+        if keyword:
+            if keyword in self._get_beautiful_places_keywords()['keywords']:
+                params['keywords'] = keyword
+        if district:
+            data = self._get_beautiful_places_area()
+            if not data:
+                return None
+
+            target_block = None
+            for block in data.get('mocDistricts', []):
+                if block.get('area') == area:
+                    target_block = block
+                    break
+
+            if target_block is not None:
+                valid_districts = [d for d in target_block.get('areaDistricts', []) if d != 'Все']
+                if district in valid_districts:
+                    params['district'] = district
+
+        if location_latitude is not None and location_longitude is not None:
+            params['location_latitude'] = location_latitude
+            params['location_longitude'] = location_longitude
+            if location_radius is not None:
+                params['location_radius'] = location_radius
+        else:
+            if building_coords and building_coords[0] and building_coords[1]:
+                params['location_latitude'] = building_coords[0]
+                params['location_longitude'] = building_coords[1]
+                if location_radius is not None:
+                    params['location_radius'] = location_radius
+
+        resp = requests.get(f'{api_site}/beautiful_places/', params=params)
+
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+
         return resp.json()

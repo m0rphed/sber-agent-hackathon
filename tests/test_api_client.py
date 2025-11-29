@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime
 
 from app.api.yazz import CityAppClient
 from app.config import REGION_ID as DEFAULT_REGION_ID
@@ -301,3 +302,131 @@ class TestIntegration:
         # 2. Получаем услуги по одной из категорий (если есть)
         services = client.pensioner_services(district='Невский', category=['Вокал'], count=3)
         assert services is not None
+
+@pytest.mark.integration
+class TestNews:
+    def test_get_news_role(self, client: CityAppClient):
+        news_role = client.get_news_role()
+        assert news_role is not None
+        assert news_role == {
+            "count": 22,
+            "role": [
+                "Бизнес",
+                "Волонтёрство",
+                "Дети и родители",
+                "Доступная среда",
+                "Здоровье",
+                "Культура",
+                "Моя дача",
+                "Наш Петербург",
+                "Наши учителя",
+                "Общество",
+                "Питомцы",
+                "Серебряный возраст",
+                "Спорт",
+                "Студенчество",
+                "Технологии",
+                "Транспорт",
+                "Труд",
+                "Туризм",
+                "Читаем вместе",
+                "Школьные годы",
+                "Экология",
+                "Я здесь живу"
+            ]
+            }
+    def test_take_news_district(self, client: CityAppClient):
+        distircts = client.take_news_district()
+        assert distircts is not None
+        assert distircts == {
+        "success": True,
+        "data": [
+            "Адмиралтейский",
+            "Василеостровский",
+            "Выборгский",
+            "Калининский",
+            "Кировский",
+            "Колпинский",
+            "Красногвардейский",
+            "Красносельский",
+            "Кронштадтский",
+            "Курортный",
+            "Московский",
+            "Невский",
+            "Петроградский",
+            "Петродворцовый",
+            "Приморский",
+            "Пушкинский",
+            "Фрунзенский",
+            "Центральный"
+        ]
+        }
+    
+    def test_take_news_without_filters(self, client: CityAppClient):
+        """Базовый кейс: новости без фильтров."""
+        news = client.take_news()
+        assert news is not None
+        assert isinstance(news, list)
+        # хотя бы что-то должно прийти
+        assert len(news) > 0
+
+        # элементы — словари с какими-то полями
+        first = news[0]
+        assert isinstance(first, dict)
+
+    def test_take_news_with_district_and_type(self, client: CityAppClient):
+        """Новости по району и типу (yazzh_type)."""
+        district = "Адмиралтейский"
+        yazzh_type = "Спорт"
+
+        news = client.take_news(
+            district=district,
+            yazzh_type=yazzh_type,
+            count=5,
+            page=1,
+        )
+
+        assert news is not None
+        assert isinstance(news, list)
+        assert 0 < len(news) <= 5
+
+        for item in news:
+            for key in (
+                "id",
+                "yazzh_type",
+                "coordinates",
+                "name",
+                "datetime_start",
+                "media_files",
+                "video",
+                "district",
+                "municipality",
+            ):
+                assert key in item
+
+            # типы полей
+            assert isinstance(item["id"], str)
+            assert isinstance(item["name"], str)
+            assert isinstance(item["datetime_start"], str)
+            assert isinstance(item["yazzh_type"], list)
+            assert isinstance(item["district"], str)
+
+            assert item["district"].startswith(district)
+
+            assert yazzh_type in item["yazzh_type"]
+
+    def test_take_news_date_range(self, client: CityAppClient):
+        """Новости за конкретный период — проверяем работу фильтра по датам."""
+        start_date = '2024-11-21'
+        end_date = '2025-12-22'
+
+        news = client.take_news(
+            start_date=start_date,
+            end_date=end_date,
+            count=10,
+            page=1,
+        )
+        assert news is not None
+
+
+
