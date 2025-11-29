@@ -9,9 +9,10 @@ from langgraph.graph.state import CompiledStateGraph
 from app.agent.llm import get_llm
 from app.agent.memory import ConversationMemory, get_memory
 from app.agent.persistent_memory import get_checkpointer
+from app.agent.utils import langchain_cast_sqlite_config as cast_sqlite_config
 from app.config import SYSTEM_PROMPT_PATH
 from app.services.toxicity import get_toxicity_filter
-from app.tools.city_tools import ALL_TOOLS
+from app.tools import ALL_TOOLS
 
 SYSTEM_PROMPT = ''
 with open(SYSTEM_PROMPT_PATH, encoding='utf-8') as f:
@@ -39,15 +40,17 @@ def create_city_agent(with_persistence: bool = False) -> CompiledStateGraph:
             system_prompt=SYSTEM_PROMPT,
             checkpointer=checkpointer,
         )
-    else:
-        agent: CompiledStateGraph = create_agent(
-            model=llm,
-            tools=ALL_TOOLS,
-            system_prompt=SYSTEM_PROMPT,
-        )
+        # возвращаем агента с персистентной памятью
+        return agent
 
-    return agent
+    # возвращается экземпляр агента по умолчанию (in-memory)
+    _agent_default: CompiledStateGraph = create_agent(
+        model=llm,
+        tools=ALL_TOOLS,
+        system_prompt=SYSTEM_PROMPT,
+    )
 
+    return _agent_default
 
 def invoke_agent(
     agent: CompiledStateGraph,
@@ -77,7 +80,9 @@ def invoke_agent(
     if thread_id:
         config = {'configurable': {'thread_id': thread_id}}
 
-    result = agent.invoke({'messages': messages}, config=config if config else None)
+    result = agent.invoke(
+        {'messages': messages}, config=cast_sqlite_config(config) if config else None
+    )
     # получаем последнее сообщение от ассистента
     ai_messages = [m for m in result['messages'] if hasattr(m, 'content') and m.type == 'ai']
 
@@ -106,10 +111,11 @@ def chat_with_persistence(
         Ответ агента
     """
     config = {'configurable': {'thread_id': thread_id}}
+    _config_runnable = cast_sqlite_config(config)
 
     result = agent.invoke(
         {'messages': [HumanMessage(content=user_message)]},
-        config=config,
+        config=_config_runnable,
     )
 
     # получаем последнее сообщение от ассистента

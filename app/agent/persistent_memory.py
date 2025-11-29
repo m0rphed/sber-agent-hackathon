@@ -13,9 +13,11 @@ import sqlite3
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+from app.agent.utils import langchain_cast_sqlite_config as cast_sqlite_config
 from app.config import MEMORY_DB_PATH
 
 # глобальные объекты для сохранения состояния
+# (TODO: улучшить потоковую безопасность)
 _db_connection: sqlite3.Connection | None = None
 _checkpointer: SqliteSaver | None = None
 
@@ -30,11 +32,11 @@ def get_db_connection() -> sqlite3.Connection:
     global _db_connection
 
     if _db_connection is None:
-        # Создаём директорию если не существует
+        # создаём директорию если не существует
         db_path = Path(MEMORY_DB_PATH)
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Создаём подключение к SQLite
+        # создаём подключение к SQLite
         _db_connection = sqlite3.connect(str(db_path), check_same_thread=False)
 
     return _db_connection
@@ -42,7 +44,7 @@ def get_db_connection() -> sqlite3.Connection:
 
 def get_checkpointer() -> SqliteSaver:
     """
-    Возвращает SQLite checkpointer для персистентной памяти
+    Возвращает SQLite checkpointer (`SqliteSaver`) для персистентной памяти
 
     Returns:
         SqliteSaver для сохранения состояния агента
@@ -72,9 +74,9 @@ def get_chat_history(thread_id: str) -> list[BaseMessage]:
     checkpointer = get_checkpointer()
 
     config = {'configurable': {'thread_id': thread_id, 'checkpoint_ns': ''}}
-
+    _config_runnable = cast_sqlite_config(config)
     try:
-        checkpoint = checkpointer.get(config)
+        checkpoint = checkpointer.get(_config_runnable)
 
         if checkpoint is None:
             return []
@@ -110,6 +112,7 @@ def clear_chat_history(thread_id: str) -> bool:
 
     ВНИМАНИЕ: SqliteSaver не имеет прямого метода удаления.
     Эта функция удаляет записи напрямую из таблиц.
+    (TODO: проверить безопасное удаление записей)
 
     Args:
         thread_id: ID потока/чата
