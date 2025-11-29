@@ -229,3 +229,5 @@ data/test_data/
 
 # Streamlit secrets (содержит настройки аутентификации)
 .streamlit/secrets.toml
+data/parsed_docs/
+data/chroma_db/
