@@ -1,5 +1,5 @@
 import requests
-
+from pprint import pprint
 from app.config import API_GEO as api_geo, API_SITE as api_site, REGION_ID as DEFAULT_REGION_ID
 
 
@@ -9,7 +9,9 @@ class CityAppClient:
         self.api_site = api_site.rstrip('/')
         self.region_id = region_id
 
-    # Определяет ID здания по адресу пользователя
+    # ---------------- Базовые geo-хелперы ----------------
+
+    # Определяет ID здания и координаты по адресу пользователя
     def _get_building_id_by_address(self, user_address):
         resp = requests.get(
             f'{self.api_geo}/geo/buildings/search/',
@@ -35,13 +37,14 @@ class CityAppClient:
         )
 
     def _get_district(self):
-        resp = requests.get(f'{api_geo}/geo/district/')
+        resp = requests.get(f'{self.api_geo}/geo/district/')
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
         return resp.json()
 
     # ---------------- МФЦ (2.2) ----------------
+
     def find_nearest_mfc(self, user_address):
         res = self._get_building_id_by_address(user_address)
         if res is None:
@@ -128,7 +131,7 @@ class CityAppClient:
         if building_data is None:
             return None
 
-        building_id, _ = building_data
+        building_id, _, _ = building_data
 
         resp = requests.get(
             f'{self.api_site}/polyclinics/',
@@ -176,7 +179,7 @@ class CityAppClient:
         if building_data is None:
             return None
 
-        building_id, _ = building_data
+        building_id, _, _ = building_data
 
         resp = requests.get(f'{self.api_site}/school/linked/{building_id}')
         if resp.status_code != 200:
@@ -208,7 +211,6 @@ class CityAppClient:
 
     def pensioner_service_category(self):
         resp = requests.get(f'{self.api_site}/pensioner/services/category/')
-        resp.raise_for_status()
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
@@ -224,7 +226,6 @@ class CityAppClient:
                 'page': page,
             },
         )
-        resp.raise_for_status()
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
@@ -256,7 +257,7 @@ class CityAppClient:
         categoria: str = '',
         kids: bool | None = None,
         free: bool | None = None,
-    ):
+        ):
         """
         События афиши за период — сценарий 2.5 (культурные мероприятия).
         """
@@ -272,6 +273,8 @@ class CityAppClient:
             print(f'код ошибки {resp.status_code}')
             return None
         return resp.json()
+
+    # ---------------- НОВОСТИ ----------------
 
     def get_news_role(self):
         resp = requests.get(
@@ -302,7 +305,7 @@ class CityAppClient:
         yazzh_type: str | list[str] | None = None,
         count: int = 10,
         page: int = 1,
-    ):
+        ):
         params: dict[str, str | int] = {
             'count': count,
             'page': page,
@@ -319,7 +322,6 @@ class CityAppClient:
 
         if yazzh_type:
             if isinstance(yazzh_type, list):
-                # роли через запятую без пробела
                 params['yazzh_type'] = ','.join(yazzh_type)
             else:
                 params['yazzh_type'] = yazzh_type
@@ -336,27 +338,51 @@ class CityAppClient:
 
         return resp.json()
 
-    # ---------------- Интересные места по близости -----------------
+    # ---------------- Интересные места (beautiful_places) -----------------
+
     def _get_beautiful_places_area(self):
-        resp = requests.get(f'{api_site}/beautiful_places/area/')
+        resp = requests.get(
+            f'{self.api_site}/beautiful_places/area/',
+            headers={'region': self.region_id},
+        )
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
         return resp.json()
 
     def _get_beautiful_places_categoria(self):
-        resp = requests.get(f'{api_site}/beautiful_places/categoria/')
+        resp = requests.get(
+            f'{self.api_site}/beautiful_places/categoria/',
+            headers={'region': self.region_id},
+        )
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
         return resp.json()
 
     def _get_beautiful_places_keywords(self):
-        resp = requests.get(f'{api_site}/beautiful_places/keywords/')
+        resp = requests.get(
+            f'{self.api_site}/beautiful_places/keywords/',
+            headers={'region': self.region_id},
+        )
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
         return resp.json()
+
+    def _get_beautiful_places_districts(self, area: str | None = None) -> list[str]:
+        data = self._get_beautiful_places_area()
+        if not data:
+            return []
+
+        result: list[str] = []
+        for block in data.get('mocDistricts', []):
+            if area is not None and block.get('area') != area:
+                continue
+            for d in block.get('areaDistricts', []):
+                if d and d != 'Все':
+                    result.append(d)
+        return result
 
     def get_beautiful_places_by_address(
         self,
@@ -364,66 +390,955 @@ class CityAppClient:
         area: str | None,
         categoria: str | None,
         keyword: str | None,
-        district,
+        district: str | None,
         location_latitude: int | float | None,
         location_longitude: int | float | None,
         location_radius: int | None = 5,
         page: int = 1,
         count: int = 10,
-    ):
-        if user_address:
-            res = self._get_building_id_by_address(user_address)
-
-            if res is None:
-                return None
-            building_id, building_address, building_coords = res
-
-        params = {
+        ):
+        
+        params: dict[str, int | float | str] = {
             'page': page,
             'count': count,
         }
 
-        if area:
-            if area in self._get_beautiful_places_area()['area']:
-                params['area'] = area
-        if categoria:
-            if categoria in self._get_beautiful_places_categoria()['category']:
-                params['categoria'] = categoria
-        if keyword:
-            if keyword in self._get_beautiful_places_keywords()['keywords']:
-                params['keywords'] = keyword
-        if district:
-            data = self._get_beautiful_places_area()
-            if not data:
+        has_address = bool(user_address)
+        has_coords = location_latitude is not None and location_longitude is not None
+
+        # 1) Приоритет: адрес пользователя → игнорируем area / district / вручную переданные координаты
+        if has_address:
+            res = self._get_building_id_by_address(user_address)
+            if res is None:
                 return None
-
-            target_block = None
-            for block in data.get('mocDistricts', []):
-                if block.get('area') == area:
-                    target_block = block
-                    break
-
-            if target_block is not None:
-                valid_districts = [d for d in target_block.get('areaDistricts', []) if d != 'Все']
-                if district in valid_districts:
-                    params['district'] = district
-
-        if location_latitude is not None and location_longitude is not None:
-            params['location_latitude'] = location_latitude
-            params['location_longitude'] = location_longitude
-            if location_radius is not None:
-                params['location_radius'] = location_radius
-        else:
-            if building_coords and building_coords[0] and building_coords[1]:
+            _, _, building_coords = res
+            if building_coords and building_coords[0] is not None and building_coords[1] is not None:
                 params['location_latitude'] = building_coords[0]
                 params['location_longitude'] = building_coords[1]
                 if location_radius is not None:
                     params['location_radius'] = location_radius
 
-        resp = requests.get(f'{api_site}/beautiful_places/', params=params)
+        # 2) Если адреса нет, но есть координаты → игнорируем area / district / user_address
+        elif has_coords:
+            params['location_latitude'] = location_latitude
+            params['location_longitude'] = location_longitude
+            if location_radius is not None:
+                params['location_radius'] = location_radius
+
+        # 3) Если ни адреса, ни координат → используем area / district (если заданы)
+        else:
+            if area:
+                area_data = self._get_beautiful_places_area()
+                if area_data and area in area_data.get('area', []):
+                    params['area'] = area
+
+            if district:
+                valid_districts = self._get_beautiful_places_districts(area)
+                if district in valid_districts:
+                    params['district'] = district
+
+        # Остальные фильтры (не зависят от того, что выбрали в качестве "места")
+        if categoria:
+            cat_data = self._get_beautiful_places_categoria()
+            if cat_data and categoria in cat_data.get('category', []):
+                params['categoria'] = categoria
+
+        if keyword:
+            kw_data = self._get_beautiful_places_keywords()
+            if kw_data and keyword in kw_data.get('keywords', []):
+                params['keywords'] = keyword
+
+        print(params)
+
+        resp = requests.get(
+            f'{self.api_site}/beautiful_places/',
+            params=params,
+            headers={'region': self.region_id},
+        )
 
         if resp.status_code != 200:
             print(f'код ошибки {resp.status_code}')
             return None
 
         return resp.json()
+
+
+    # ---------------- Памятные даты -----------------
+
+    def get_memorable_dates(self):
+        resp = requests.get(f'{self.api_site}/memorable_dates/')
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_memorable_dates_by_ids(self, ids: int):
+        if ids is None:
+            print("параметр 'ids' обязателен для /memorable_dates/ids/")
+            return None
+
+        resp = requests.get(
+            f'{self.api_site}/memorable_dates/ids/',
+            params={'ids': ids},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_memorable_dates_by_date(self, day: int, month: int):
+        resp = requests.get(
+            f'{self.api_site}/memorable_dates/date/',
+            params={'day': day, 'month': month},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    # ---------------- MyPets (основной сервис) -----------------
+
+    def get_mypets_all_category(
+        self,
+        location_latitude: float | None = None,
+        location_longitude: float | None = None,
+        location_radius: int | None = None,
+        types: list[str] | None = None,
+        ):
+        params: dict[str, float | int | str | list[str]] = {
+            'location_latitude': location_latitude,
+            'location_longitude': location_longitude,
+            'location_radius': location_radius,
+            'type': types,
+        }
+        params = {k: v for k, v in params.items() if v is not None}
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/all-category/',
+            params=params,
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_animal_breeds(
+        self,
+        specie: str | None = None,
+        breed: str | None = None,
+        ):
+        if breed is not None and len(breed) < 3:
+            print("параметр 'breed' должен быть не короче 3 символов")
+            return None
+
+        params: dict[str, str] = {}
+        if specie:
+            params['specie'] = specie
+        if breed:
+            params['breed'] = breed
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/animal-breeds/',
+            params=params,
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_holidays(self):
+        resp = requests.get(f'{self.api_site}/mypets/holidays/')
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_posts(
+        self,
+        specie: str | None = None,
+        page: int = 1,
+        size: int = 10,
+        ):
+        params: dict[str, int | str] = {
+            'page': page,
+            'size': size,
+        }
+        if specie:
+            params['specie'] = specie
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/posts/',
+            params=params,
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_posts_id(
+        self,
+        posts_id: int | None = None,
+        app_version: str | None = None,
+        user_id: str | None = None,
+        ):
+        if posts_id is None:
+            return None
+
+        params = {'id': posts_id}
+        headers: dict[str, str] = {'region': self.region_id}
+        if app_version:
+            headers['app-version'] = app_version
+        if user_id:
+            headers['user-id'] = user_id
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/posts/id/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_recommendations(
+        self,
+        specie: str | None = None,
+        page: int = 1,
+        size: int = 10,
+        ):
+        params: dict[str, int | str] = {
+            'page': page,
+            'size': size,
+        }
+        if specie:
+            params['specie'] = specie
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/recommendations/',
+            params=params,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    # ---------------- MyPets EGS (клиники, парки, приюты) -----------------
+
+    def get_mypets_clinics_id(
+        self,
+        post_id: int | None = None,
+        app_version: str | None = None,
+        user_id: str | None = None,
+        ):
+        if post_id is None:
+            return None
+
+        params = {'id': post_id}
+        headers: dict[str, str] = {}
+        if app_version:
+            headers['app-version'] = app_version
+        if user_id:
+            headers['user-id'] = user_id
+        headers['region'] = self.region_id
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/clinics/id/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_clinics(
+        self,
+        location_latitude: float | None = None,
+        location_longitude: float | None = None,
+        location_radius: int | None = 5,
+        services: list[str] | None = None,
+        user_address: str | None = None,
+        ):
+
+        if (location_latitude is None or location_longitude is None) and user_address:
+            building_data = self._get_building_id_by_address(user_address)
+            if building_data is None:
+                return None
+
+            _, _, coords = building_data
+            if coords and coords[0] is not None and coords[1] is not None:
+                location_latitude, location_longitude = coords
+
+        params: dict[str, float | int | list[str]] = {
+            'location_latitude': location_latitude,
+            'location_longitude': location_longitude,
+            'location_radius': location_radius,
+            'services': services,
+        }
+        params = {k: v for k, v in params.items() if v is not None}
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/clinics/',
+            params=params,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_parks_playground(
+        self,
+        location_latitude: float | None = None,
+        location_longitude: float | None = None,
+        location_radius: int | None = None,
+        place_type: str | None = None,
+    ):
+        params: dict[str, float | int | str] = {
+            'location_latitude': location_latitude,
+            'location_longitude': location_longitude,
+            'location_radius': location_radius,
+        }
+        if place_type:
+            params['type'] = place_type
+
+        params = {k: v for k, v in params.items() if v is not None}
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/parks-playground/',
+            params=params,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_parks_playground_id(
+        self,
+        park_id: int | None = None,
+        app_version: str | None = None,
+        user_id: str | None = None,
+    ):
+        if park_id is None:
+            return None
+
+        params = {'id': park_id}
+        headers: dict[str, str] = {}
+        if app_version:
+            headers['app-version'] = app_version
+        if user_id:
+            headers['user-id'] = user_id
+        headers['region'] = self.region_id
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/parks-playground/id/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_shelters(
+        self,
+        location_latitude: float | None = None,
+        location_longitude: float | None = None,
+        location_radius: int | None = None,
+        specialization: list[str] | None = None,
+    ):
+        params: dict[str, float | int | list[str]] = {
+            'location_latitude': location_latitude,
+            'location_longitude': location_longitude,
+            'location_radius': location_radius,
+            'specialization': specialization,
+        }
+        params = {k: v for k, v in params.items() if v is not None}
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/shelters/',
+            params=params,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_mypets_shelters_id(
+        self,
+        shelter_id: int | None = None,
+        app_version: str | None = None,
+        user_id: str | None = None,
+        ):
+        if shelter_id is None:
+            return None
+
+        params = {'id': shelter_id}
+        headers: dict[str, str] = {}
+        if app_version:
+            headers['app-version'] = app_version
+        if user_id:
+            headers['user-id'] = user_id
+        headers['region'] = self.region_id
+
+        resp = requests.get(
+            f'{self.api_site}/mypets/shelters/id/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    # ---------------- Спорт (SportCity) -----------------
+
+    def get_sport_events(
+        self,
+        categoria: str | None = None,
+        type_municipality: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        district: str | None = None,
+        ovz: str | None = None,
+        family_hour: str | None = None,
+        page: int = 1,
+        count: int = 10,
+        service: str | None = None,
+        ):
+        params: dict[str, str | int] = {
+            'page': page,
+            'count': count,
+        }
+        if categoria:
+            params['categoria'] = categoria
+        if type_municipality:
+            params['type_municipality'] = type_municipality
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+        if district:
+            params['district'] = district
+        if ovz:
+            params['ovz'] = ovz
+        if family_hour:
+            params['family_hour'] = family_hour
+        if service:
+            params['service'] = service
+
+        headers = {'region': self.region_id}
+
+        resp = requests.get(
+            f'{self.api_site}/sport-events/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sport_event_by_id(
+        self,
+        sport_even_id: int | None = None,
+        user_id: str | None = None,
+        ):
+        if sport_even_id is None:
+            return None
+
+        params = {'id': sport_even_id}
+        headers: dict[str, str] = {'region': self.region_id}
+        if user_id:
+            headers['user-id'] = user_id
+
+        resp = requests.get(
+            f'{self.api_site}/sport-events/id/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sport_events_categoria(
+        self,
+        district: str | None = None,
+        service: str | None = None,
+        user_id: str | None = None,
+        ):
+        if district is None:
+            return None
+
+        params: dict[str, str] = {'district': district}
+        if service:
+            params['service'] = service
+
+        headers: dict[str, str] = {'region': self.region_id}
+        if user_id:
+            headers['user-id'] = user_id
+
+        resp = requests.get(
+            f'{self.api_site}/sport-events/categoria/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sport_events_map(
+        self,
+        categoria: str | None = None,
+        type_municipality: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        district: str | None = None,
+        ovz: str | None = None,
+        family_hour: str | None = None,
+        service: str | None = None,
+        ):
+        params: dict[str, str] = {}
+        if categoria:
+            params['categoria'] = categoria
+        if type_municipality:
+            params['type_municipality'] = type_municipality
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+        if district:
+            params['district'] = district
+        if ovz:
+            params['ovz'] = ovz
+        if family_hour:
+            params['family_hour'] = family_hour
+        if service:
+            params['service'] = service
+
+        headers = {'region': self.region_id}
+
+        resp = requests.get(
+            f'{self.api_site}/sport-events/map',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    # ---------------- Спортплощадки (SportGrounds) -----------------
+
+    def get_sportgrounds(
+        self,
+        types: str | None = None,
+        ovz: bool | None = None,
+        light: bool | None = None,
+        district: str | None = None,
+        season: str | None = 'Все',
+        location_latitude: float | None = None,
+        location_longitude: float | None = None,
+        location_radius: int | None = None,
+        page: int = 1,
+        count: int = 10,
+        ):
+        params: dict[str, float | int | str | bool] = {
+            'page': page,
+            'count': count,
+        }
+        if types:
+            params['types'] = types
+        if ovz is not None:
+            params['ovz'] = ovz
+        if light is not None:
+            params['light'] = light
+        if district:
+            params['district'] = district
+        if season:
+            params['season'] = season
+        if location_latitude is not None:
+            params['location_latitude'] = location_latitude
+        if location_longitude is not None:
+            params['location_longitude'] = location_longitude
+        if location_radius is not None:
+            params['location_radius'] = location_radius
+
+        headers = {'region': self.region_id}
+
+        resp = requests.get(
+            f'{self.api_site}/sportgrounds/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sportgrounds_by_id(
+        self,
+        sportgrounds_id: int | None = None,
+        app_version: str | None = None,
+        user_id: str | None = None,
+        ):
+        if sportgrounds_id is None:
+            return None
+
+        params = {'id': sportgrounds_id}
+        headers: dict[str, str] = {'region': self.region_id}
+        if app_version:
+            headers['app-version'] = app_version
+        if user_id:
+            headers['user-id'] = user_id
+
+        resp = requests.get(
+            f'{self.api_site}/sportgrounds/id/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sportgrounds_count(self):
+        headers = {'region': self.region_id}
+        resp = requests.get(
+            f'{self.api_site}/sportgrounds/count/',
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sportgrounds_count_district(self, district: str | None = None):
+        params: dict[str, str] = {}
+        if district:
+            params['district'] = district
+
+        headers = {'region': self.region_id}
+
+        resp = requests.get(
+            f'{self.api_site}/sportgrounds/count/district/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sportgrounds_types(self):
+        headers = {'region': self.region_id}
+        resp = requests.get(
+            f'{self.api_site}/sportgrounds/types/',
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_sportgrounds_map(
+        self,
+        types: str | None = None,
+        ovz: bool | None = None,
+        light: bool | None = None,
+        season: str | None = None,
+        location_latitude: float | None = None,
+        location_longitude: float | None = None,
+        location_radius: int | None = None,
+        ):
+        params: dict[str, float | int | str | bool] = {}
+        if types:
+            params['types'] = types
+        if ovz is not None:
+            params['ovz'] = ovz
+        if light is not None:
+            params['light'] = light
+        if season:
+            params['season'] = season
+        if location_latitude is not None:
+            params['location_latitude'] = location_latitude
+        if location_longitude is not None:
+            params['location_longitude'] = location_longitude
+        if location_radius is not None:
+            params['location_radius'] = location_radius
+
+        headers = {'region': self.region_id}
+
+        resp = requests.get(
+            f'{self.api_site}/sportgrounds/map/',
+            params=params,
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+# if __name__ == '__main__':
+
+#     client = CityAppClient()
+#     user_address = 'ул. Танкиста Хрустицкого, д. 62, л. А'
+#     district = 'Кировский'
+
+#     def section(title: str) -> None:
+#         print('\n' + '=' * 80)
+#         print(title)
+#         print('=' * 80)
+
+    # 1. Базовая геоинформация по адресу
+    # section('1. Гео по адресу')
+    # building = client._get_building_id_by_address(user_address)
+    # print('Результат _get_building_id_by_address:')
+    # pprint(building)
+    # coords = None
+    # if building:
+    #     building_id, full_address, coords = building
+        #print('ID здания:', building_id)
+        #print('Полный адрес:', full_address)
+        #print('Координаты:', coords)
+    #else:
+        #print('Здание по адресу не найдено')
+
+    # 2. МФЦ
+    # section('2. МФЦ по адресу и по району')
+    # print('Ближайший МФЦ к адресу:')
+    # pprint(client.find_nearest_mfc(user_address))
+
+    # mfc_list = client.get_mfc_by_district(district)
+    # print(f'\nМФЦ в районе {district}: всего {len(mfc_list) if mfc_list else 0}')
+    # if mfc_list:
+    #     print('Первый МФЦ:')
+    #     pprint(mfc_list[0])
+
+    # 3. Поликлиники
+    # section('3. Поликлиники по адресу')
+    # poly = client.get_polyclinics_by_address(user_address)
+    # print('Поликлиники:', f'найдено {len(poly)}' if poly else 'ничего не найдено')
+    # if poly:
+    #     pprint(poly)
+
+    # 4. Школы и детсады
+    # section('4. Школы и детские сады')
+    # schools = client.get_schools_by_district(district)
+    # print(f'Школы в районе {district}:', f'{len(schools)} шт.' if schools else 'нет данных')
+    # if schools:
+    #     pprint(schools[:3])
+
+    # linked = client.get_linked_schools(user_address)
+    # print('\nШколы, привязанные к адресу:')
+    # pprint(linked)
+
+    # dou = client.get_dou(district=district, age_year=3)
+    # print(f'\nДетские сады в районе {district} для 3 лет:')
+    # pprint(dou['data'][:3])
+
+    # 5. Услуги для пенсионеров
+    # section('5. Услуги для пенсионеров')
+    # print('Категории услуг:')
+    # pprint(client.pensioner_service_category())
+
+    # print(f'\nУслуги для пенсионеров в районе {district}:')
+    # pprint(client.pensioner_services(district=district, category=['Вокал'], count=5))
+
+    # 6. Афиша города
+    # section('6. Афиша города')
+    # start_date = '2025-11-01T00:00:00'
+    # end_date = '2025-12-31T23:59:59'
+
+    # print('Категории афиши:')
+    # pprint(client.afisha_categories(start_date, end_date))
+
+    # print('\nСобытия афиши (театры, для детей):')
+    # pprint(client.afisha_events(start_date, end_date, categoria='Театр', kids=True))
+
+    # 7. Новости
+    # section('7. Новости')
+    # print('Роли новостей:')
+    # pprint(client.get_news_role())
+
+    # print('\nРайоны для новостей:')
+    # pprint(client.take_news_district())
+
+    # print(f'\nНовости по району {district} (первые 5):')
+    # news = client.take_news(district=district, count=5, page=1)
+    # if isinstance(news, list):
+    #     print(f'Всего новостей: {len(news)}')
+    #     if news:
+    #         pprint(news[0])
+    # else:
+    #     pprint(news)
+
+    # 8. Интересные места
+    # section('8. Интересные места (beautiful_places)')
+    # bp = client.get_beautiful_places_by_address(
+    #     user_address=user_address,
+    #     area=None,
+    #     categoria=None,
+    #     keyword=None,
+    #     district=None,
+    #     location_latitude=None,
+    #     location_longitude=None,
+    #     location_radius=5,
+    #     page=1,
+    #     count=5,
+    # )
+    # print('Интересные места около адреса / в районе:')
+    # pprint(bp)
+    # bp = client.get_beautiful_places_by_address(
+    #     user_address=None,
+    #     area=None,
+    #     categoria=None,
+    #     keyword=None,
+    #     district=None,
+    #     location_latitude=None,
+    #     location_longitude=None,
+    #     location_radius=5,
+    #     page=1,
+    #     count=5,
+    # )
+    # print('Интересные места около адреса / в районе:')
+    # pprint(bp)
+
+    # bp = client.get_beautiful_places_by_address(
+    #     user_address=None,
+    #     area='Районы города',
+    #     categoria=None,
+    #     keyword=None,
+    #     district='Кировский',
+    #     location_latitude=None,
+    #     location_longitude=None,
+    #     location_radius=5,
+    #     page=1,
+    #     count=5,
+    # )
+    # print('Интересные места около адреса / в районе:')
+    # pprint(bp)
+
+    # bp = client.get_beautiful_places_by_address(
+    #     user_address=None,
+    #     area=None,
+    #     categoria=None,
+    #     keyword=None,
+    #     district='Кировский',
+    #     location_latitude=None,
+    #     location_longitude=None,
+    #     location_radius=5,
+    #     page=1,
+    #     count=5,
+    # )
+    # print('Интересные места около адреса / в районе:')
+    # pprint(bp)
+
+    # bp = client.get_beautiful_places_by_address(
+    #     user_address=None,
+    #     area='Районы города',
+    #     categoria=None,
+    #     keyword=None,
+    #     district=None,
+    #     location_latitude=None,
+    #     location_longitude=None,
+    #     location_radius=5,
+    #     page=1,
+    #     count=5,
+    # )
+    # print('Интересные места около адреса / в районе:')
+    # pprint(bp)
+
+
+    # 9. Памятные даты
+    # section('9. Памятные даты')
+    # md_all = client.get_memorable_dates()
+    # print('Все памятные даты (фрагмент):')
+    # pprint(md_all)
+
+    # print('\nПамятные даты на 1 января:')
+    # pprint(client.get_memorable_dates_by_date(day=1, month=1))
+
+    # 10. MyPets (основной сервис)
+    # section('10. MyPets: категории рядом с адресом')
+    # lat, lon = (coords or (None, None))
+    # pets_all = client.get_mypets_all_category(
+    #     location_latitude=lat,
+    #     location_longitude=lon,
+    #     location_radius=3,
+    # )
+    # pprint(pets_all)
+
+    # print('\nПороды животных (пример, specie=Собака):')
+    # pprint(client.get_mypets_animal_breeds(specie='Собака', breed=None))
+
+    # print('\nПраздники MyPets:')
+    # pprint(client.get_mypets_holidays())
+
+    # print('\nПосты MyPets:')
+    # pprint(client.get_mypets_posts(page=1, size=5))
+
+    # 11. MyPets EGS (клиники, парки, приюты)
+    # section('11. MyPets EGS: клиники / парки / приюты')
+    # print('Клиники MyPets по адресу (через user_address):')
+    # clinics = client.get_mypets_clinics(
+    #     user_address=user_address,
+    #     location_radius=10,
+    # )
+    # pprint(clinics)
+
+    # print('\nПарки / площадки MyPets по координатам:')
+    # parks = client.get_mypets_parks_playground(
+    #     location_latitude=lat,
+    #     location_longitude=lon,
+    #     location_radius=3,
+    # )
+    # pprint(parks)
+
+    # print('\nПриюты MyPets по координатам:')
+    # shelters = client.get_mypets_shelters(
+    #     location_latitude=lat,
+    #     location_longitude=lon,
+    #     location_radius=5,
+    # )
+    # pprint(shelters)
+
+    # 12. Спорт и спортплощадки
+    # section('12. Спорт и спортплощадки')
+    # print('Спортивные события в районе / городе:')
+    # sport_events = client.get_sport_events(
+    #     district=district,
+    #     page=1,
+    #     count=5,
+    # )
+    # pprint(sport_events)
+
+    # print('\nСпортивные площадки рядом с адресом:')
+    # sportgrounds = client.get_sportgrounds(
+    #     district=district,
+    #     location_latitude=lat,
+    #     location_longitude=lon,
+    #     location_radius=3,
+    #     page=1,
+    #     count=5,
+    # )
+    # pprint(sportgrounds)
+
+    # print('\nСчётчики спортплощадок по району:')
+    # pprint(client.get_sportgrounds_count_district(district=district))
+
+    # print('\nТипы спортплощадок:')
+    # pprint(client.get_sportgrounds_types())
+
+    # print('\nКарта спортплощадок (фильтр по району):')
+    # pprint(
+    #     client.get_sportgrounds_map(
+    #         district if 'district' in client.get_sportgrounds_count_district(district) else None
+    #     )
+    # )
+
