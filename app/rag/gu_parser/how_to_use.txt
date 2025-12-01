@@ -1,0 +1,3 @@
+cd sber-agent-hackathon\app\rag
+scrapy list
+scrapy crawl <name>

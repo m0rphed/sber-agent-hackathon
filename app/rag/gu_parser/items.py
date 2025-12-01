@@ -14,6 +14,8 @@ class KnowledgeBaseItem(scrapy.Item):
     # Изображение из карточки
     image = scrapy.Field()
     
+    header_block = scrapy.Field()
+
     # Полное содержимое статьи
     content = scrapy.Field()
     
