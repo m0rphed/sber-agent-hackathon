@@ -257,7 +257,7 @@ class CityAppClient:
         categoria: str = '',
         kids: bool | None = None,
         free: bool | None = None,
-        ):
+    ):
         """
         События афиши за период — сценарий 2.5 (культурные мероприятия).
         """
@@ -305,7 +305,7 @@ class CityAppClient:
         yazzh_type: str | list[str] | None = None,
         count: int = 10,
         page: int = 1,
-        ):
+    ):
         params: dict[str, str | int] = {
             'count': count,
             'page': page,
@@ -396,8 +396,7 @@ class CityAppClient:
         location_radius: int | None = 5,
         page: int = 1,
         count: int = 10,
-        ):
-        
+    ):
         params: dict[str, int | float | str] = {
             'page': page,
             'count': count,
@@ -412,7 +411,11 @@ class CityAppClient:
             if res is None:
                 return None
             _, _, building_coords = res
-            if building_coords and building_coords[0] is not None and building_coords[1] is not None:
+            if (
+                building_coords
+                and building_coords[0] is not None
+                and building_coords[1] is not None
+            ):
                 params['location_latitude'] = building_coords[0]
                 params['location_longitude'] = building_coords[1]
                 if location_radius is not None:
@@ -462,7 +465,6 @@ class CityAppClient:
 
         return resp.json()
 
-
     # ---------------- Памятные даты -----------------
 
     def get_memorable_dates(self):
@@ -504,7 +506,7 @@ class CityAppClient:
         location_longitude: float | None = None,
         location_radius: int | None = None,
         types: list[str] | None = None,
-        ):
+    ):
         params: dict[str, float | int | str | list[str]] = {
             'location_latitude': location_latitude,
             'location_longitude': location_longitude,
@@ -527,7 +529,7 @@ class CityAppClient:
         self,
         specie: str | None = None,
         breed: str | None = None,
-        ):
+    ):
         if breed is not None and len(breed) < 3:
             print("параметр 'breed' должен быть не короче 3 символов")
             return None
@@ -560,7 +562,7 @@ class CityAppClient:
         specie: str | None = None,
         page: int = 1,
         size: int = 10,
-        ):
+    ):
         params: dict[str, int | str] = {
             'page': page,
             'size': size,
@@ -583,7 +585,7 @@ class CityAppClient:
         posts_id: int | None = None,
         app_version: str | None = None,
         user_id: str | None = None,
-        ):
+    ):
         if posts_id is None:
             return None
 
@@ -609,7 +611,7 @@ class CityAppClient:
         specie: str | None = None,
         page: int = 1,
         size: int = 10,
-        ):
+    ):
         params: dict[str, int | str] = {
             'page': page,
             'size': size,
@@ -633,7 +635,7 @@ class CityAppClient:
         post_id: int | None = None,
         app_version: str | None = None,
         user_id: str | None = None,
-        ):
+    ):
         if post_id is None:
             return None
 
@@ -662,8 +664,7 @@ class CityAppClient:
         location_radius: int | None = 5,
         services: list[str] | None = None,
         user_address: str | None = None,
-        ):
-
+    ):
         if (location_latitude is None or location_longitude is None) and user_address:
             building_data = self._get_building_id_by_address(user_address)
             if building_data is None:
@@ -772,7 +773,7 @@ class CityAppClient:
         shelter_id: int | None = None,
         app_version: str | None = None,
         user_id: str | None = None,
-        ):
+    ):
         if shelter_id is None:
             return None
 
@@ -808,7 +809,7 @@ class CityAppClient:
         page: int = 1,
         count: int = 10,
         service: str | None = None,
-        ):
+    ):
         params: dict[str, str | int] = {
             'page': page,
             'count': count,
@@ -846,7 +847,7 @@ class CityAppClient:
         self,
         sport_even_id: int | None = None,
         user_id: str | None = None,
-        ):
+    ):
         if sport_even_id is None:
             return None
 
@@ -870,7 +871,7 @@ class CityAppClient:
         district: str | None = None,
         service: str | None = None,
         user_id: str | None = None,
-        ):
+    ):
         if district is None:
             return None
 
@@ -902,7 +903,7 @@ class CityAppClient:
         ovz: str | None = None,
         family_hour: str | None = None,
         service: str | None = None,
-        ):
+    ):
         params: dict[str, str] = {}
         if categoria:
             params['categoria'] = categoria
@@ -947,7 +948,7 @@ class CityAppClient:
         location_radius: int | None = None,
         page: int = 1,
         count: int = 10,
-        ):
+    ):
         params: dict[str, float | int | str | bool] = {
             'page': page,
             'count': count,
@@ -986,7 +987,7 @@ class CityAppClient:
         sportgrounds_id: int | None = None,
         app_version: str | None = None,
         user_id: str | None = None,
-        ):
+    ):
         if sportgrounds_id is None:
             return None
 
@@ -1055,7 +1056,7 @@ class CityAppClient:
         location_latitude: float | None = None,
         location_longitude: float | None = None,
         location_radius: int | None = None,
-        ):
+    ):
         params: dict[str, float | int | str | bool] = {}
         if types:
             params['types'] = types
@@ -1084,261 +1085,319 @@ class CityAppClient:
             return None
         return resp.json()
 
-# if __name__ == '__main__':
+    def get_municipality(self):
+        resp = requests.get(f'{self.api_geo}/geo/municipality/', headers={'region': self.region_id})
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
 
-#     client = CityAppClient()
-#     user_address = 'ул. Танкиста Хрустицкого, д. 62, л. А'
-#     district = 'Кировский'
+    def get_district(self):
+        resp = requests.get(f'{self.api_geo}/geo/district/', headers={'region': self.region_id})
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
 
-#     def section(title: str) -> None:
-#         print('\n' + '=' * 80)
-#         print(title)
-#         print('=' * 80)
+    def get_buildings_info(self, user_address: str):
+        res = self._get_building_id_by_address(user_address)
+        if res is None:
+            return None
+
+        building_id, _, _ = res
+
+        resp = requests.get(
+            f'{self.api_geo}/geo/buildings/{building_id}/',
+            params={'region_of_search': self.region_id},
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+
+        return resp.json()
+
+    def get_info_mancompany_by_address(self, user_address: str):
+        res = self._get_building_id_by_address(user_address)
+        if res is None:
+            return None
+
+        building_id, _, _ = res
+
+        base_geo = api_geo.rstrip('/')
+        resp = requests.get(
+            f'{base_geo}/api/v1/mancompany/{building_id}',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+
+        return resp.json()
+
+    def get_info_mancompany_company(
+        self,
+        user_address: str | None = None,
+        company_name: str | None = None,
+        company_inn: str | None = None,
+    ):
+        base_geo = api_geo.rstrip('/')
+        params: dict[str, str] = {}
+
+        if user_address:
+            mancompany = self.get_info_mancompany_by_address(user_address)
+            if not mancompany or 'data' not in mancompany:
+                return None
+
+            company_id = mancompany['data'].get('id')
+            if not company_id:
+                return None
+
+            params['company_id'] = str(company_id)
+
+        if company_name:
+            params['company_name'] = company_name
+        if company_inn:
+            params['company_inn'] = company_inn
+
+        resp = requests.get(
+            f'{base_geo}/api/v1/mancompany/company/',
+            params=params or None,
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+
+        return resp.json()
+
+
+if __name__ == '__main__':
+
+    client = CityAppClient()
+    user_address = 'ул. Танкиста Хрустицкого, д. 62, л. А'
+    district = 'Кировский'
+
+    def section(title: str) -> None:
+        print('\n' + '=' * 80)
+        print(title)
+        print('=' * 80)
 
     # 1. Базовая геоинформация по адресу
-    # section('1. Гео по адресу')
-    # building = client._get_building_id_by_address(user_address)
-    # print('Результат _get_building_id_by_address:')
-    # pprint(building)
-    # coords = None
-    # if building:
-    #     building_id, full_address, coords = building
-        #print('ID здания:', building_id)
-        #print('Полный адрес:', full_address)
-        #print('Координаты:', coords)
-    #else:
-        #print('Здание по адресу не найдено')
+    section('1. Гео по адресу')
+    building = client._get_building_id_by_address(user_address)
+    print('Результат _get_building_id_by_address:')
+    pprint(building)
+    coords = None
+    if building:
+        building_id, full_address, coords = building
+        print('ID здания:', building_id)
+        print('Полный адрес:', full_address)
+        print('Координаты:', coords)
+    else:
+        print('Здание по адресу не найдено')
 
     # 2. МФЦ
-    # section('2. МФЦ по адресу и по району')
-    # print('Ближайший МФЦ к адресу:')
-    # pprint(client.find_nearest_mfc(user_address))
+    section('2. МФЦ по адресу и по району')
+    print('Ближайший МФЦ к адресу:')
+    pprint(client.find_nearest_mfc(user_address))
 
-    # mfc_list = client.get_mfc_by_district(district)
-    # print(f'\nМФЦ в районе {district}: всего {len(mfc_list) if mfc_list else 0}')
-    # if mfc_list:
-    #     print('Первый МФЦ:')
-    #     pprint(mfc_list[0])
+    mfc_list = client.get_mfc_by_district(district)
+    print(f'\nМФЦ в районе {district}: всего {len(mfc_list) if mfc_list else 0}')
+    if mfc_list:
+        print('Первый МФЦ:')
+        pprint(mfc_list[0])
 
     # 3. Поликлиники
-    # section('3. Поликлиники по адресу')
-    # poly = client.get_polyclinics_by_address(user_address)
-    # print('Поликлиники:', f'найдено {len(poly)}' if poly else 'ничего не найдено')
-    # if poly:
-    #     pprint(poly)
+    section('3. Поликлиники по адресу')
+    poly = client.get_polyclinics_by_address(user_address)
+    print('Поликлиники:', f'найдено {len(poly)}' if poly else 'ничего не найдено')
+    if poly:
+        pprint(poly[0])
 
     # 4. Школы и детсады
-    # section('4. Школы и детские сады')
-    # schools = client.get_schools_by_district(district)
-    # print(f'Школы в районе {district}:', f'{len(schools)} шт.' if schools else 'нет данных')
-    # if schools:
-    #     pprint(schools[:3])
+    section('4. Школы и детские сады')
+    schools = client.get_schools_by_district(district)
+    print(f'Школы в районе {district}:', f'{len(schools)} шт.' if schools else 'нет данных')
+    if schools:
+        pprint(schools[0])
 
-    # linked = client.get_linked_schools(user_address)
-    # print('\nШколы, привязанные к адресу:')
-    # pprint(linked)
+    linked = client.get_linked_schools(user_address)
+    print('\nШколы, привязанные к адресу:')
+    pprint(linked)
 
-    # dou = client.get_dou(district=district, age_year=3)
-    # print(f'\nДетские сады в районе {district} для 3 лет:')
-    # pprint(dou['data'][:3])
+    dou = client.get_dou(district=district, age_year=3)
+    print(f'\nДетские сады в районе {district} для 3 лет:')
+    pprint(dou)
 
     # 5. Услуги для пенсионеров
-    # section('5. Услуги для пенсионеров')
-    # print('Категории услуг:')
-    # pprint(client.pensioner_service_category())
+    section('5. Услуги для пенсионеров')
+    print('Категории услуг:')
+    pprint(client.pensioner_service_category())
 
-    # print(f'\nУслуги для пенсионеров в районе {district}:')
-    # pprint(client.pensioner_services(district=district, category=['Вокал'], count=5))
+    print(f'\nУслуги для пенсионеров в районе {district}:')
+    pprint(client.pensioner_services(district=district, category=['Вокал'], count=5))
 
     # 6. Афиша города
-    # section('6. Афиша города')
-    # start_date = '2025-11-01T00:00:00'
-    # end_date = '2025-12-31T23:59:59'
+    section('6. Афиша города')
+    start_date = '2024-11-01T00:00:00'
+    end_date = '2024-12-31T23:59:59'
 
-    # print('Категории афиши:')
-    # pprint(client.afisha_categories(start_date, end_date))
+    print('Категории афиши:')
+    pprint(client.afisha_categories(start_date, end_date))
 
-    # print('\nСобытия афиши (театры, для детей):')
-    # pprint(client.afisha_events(start_date, end_date, categoria='Театр', kids=True))
+    print('\nСобытия афиши (театры, для детей):')
+    pprint(client.afisha_events(start_date, end_date, categoria='Театр', kids=True))
 
     # 7. Новости
-    # section('7. Новости')
-    # print('Роли новостей:')
-    # pprint(client.get_news_role())
+    section('7. Новости')
+    print('Роли новостей:')
+    pprint(client.get_news_role())
 
-    # print('\nРайоны для новостей:')
-    # pprint(client.take_news_district())
+    print('\nРайоны для новостей:')
+    pprint(client.take_news_district())
 
-    # print(f'\nНовости по району {district} (первые 5):')
-    # news = client.take_news(district=district, count=5, page=1)
-    # if isinstance(news, list):
-    #     print(f'Всего новостей: {len(news)}')
-    #     if news:
-    #         pprint(news[0])
-    # else:
-    #     pprint(news)
+    print(f'\nНовости по району {district} (первые 5):')
+    news = client.take_news(district=district, count=5, page=1)
+    if isinstance(news, list):
+        print(f'Всего новостей: {len(news)}')
+        if news:
+            pprint(news[0])
+    else:
+        pprint(news)
 
     # 8. Интересные места
-    # section('8. Интересные места (beautiful_places)')
-    # bp = client.get_beautiful_places_by_address(
-    #     user_address=user_address,
-    #     area=None,
-    #     categoria=None,
-    #     keyword=None,
-    #     district=None,
-    #     location_latitude=None,
-    #     location_longitude=None,
-    #     location_radius=5,
-    #     page=1,
-    #     count=5,
-    # )
-    # print('Интересные места около адреса / в районе:')
-    # pprint(bp)
-    # bp = client.get_beautiful_places_by_address(
-    #     user_address=None,
-    #     area=None,
-    #     categoria=None,
-    #     keyword=None,
-    #     district=None,
-    #     location_latitude=None,
-    #     location_longitude=None,
-    #     location_radius=5,
-    #     page=1,
-    #     count=5,
-    # )
-    # print('Интересные места около адреса / в районе:')
-    # pprint(bp)
-
-    # bp = client.get_beautiful_places_by_address(
-    #     user_address=None,
-    #     area='Районы города',
-    #     categoria=None,
-    #     keyword=None,
-    #     district='Кировский',
-    #     location_latitude=None,
-    #     location_longitude=None,
-    #     location_radius=5,
-    #     page=1,
-    #     count=5,
-    # )
-    # print('Интересные места около адреса / в районе:')
-    # pprint(bp)
-
-    # bp = client.get_beautiful_places_by_address(
-    #     user_address=None,
-    #     area=None,
-    #     categoria=None,
-    #     keyword=None,
-    #     district='Кировский',
-    #     location_latitude=None,
-    #     location_longitude=None,
-    #     location_radius=5,
-    #     page=1,
-    #     count=5,
-    # )
-    # print('Интересные места около адреса / в районе:')
-    # pprint(bp)
-
-    # bp = client.get_beautiful_places_by_address(
-    #     user_address=None,
-    #     area='Районы города',
-    #     categoria=None,
-    #     keyword=None,
-    #     district=None,
-    #     location_latitude=None,
-    #     location_longitude=None,
-    #     location_radius=5,
-    #     page=1,
-    #     count=5,
-    # )
-    # print('Интересные места около адреса / в районе:')
-    # pprint(bp)
-
+    section('8. Интересные места (beautiful_places)')
+    bp = client.get_beautiful_places_by_address(
+        user_address=user_address,
+        area=None,
+        categoria=None,
+        keyword=None,
+        district=district,
+        location_latitude=None,
+        location_longitude=None,
+        location_radius=5,
+        page=1,
+        count=5,
+    )
+    print('Интересные места около адреса / в районе:')
+    pprint(bp)
 
     # 9. Памятные даты
-    # section('9. Памятные даты')
-    # md_all = client.get_memorable_dates()
-    # print('Все памятные даты (фрагмент):')
-    # pprint(md_all)
+    section('9. Памятные даты')
+    md_all = client.get_memorable_dates()
+    print('Все памятные даты (фрагмент):')
+    if isinstance(md_all, list) and md_all:
+        pprint(md_all[:3])
+    else:
+        pprint(md_all)
 
-    # print('\nПамятные даты на 1 января:')
-    # pprint(client.get_memorable_dates_by_date(day=1, month=1))
+    print('\nПамятные даты на 1 января:')
+    pprint(client.get_memorable_dates_by_date(day=1, month=1))
 
     # 10. MyPets (основной сервис)
-    # section('10. MyPets: категории рядом с адресом')
-    # lat, lon = (coords or (None, None))
-    # pets_all = client.get_mypets_all_category(
-    #     location_latitude=lat,
-    #     location_longitude=lon,
-    #     location_radius=3,
-    # )
-    # pprint(pets_all)
+    section('10. MyPets: категории рядом с адресом')
+    lat, lon = (coords or (None, None))
+    pets_all = client.get_mypets_all_category(
+        location_latitude=lat,
+        location_longitude=lon,
+        location_radius=3,
+    )
+    pprint(pets_all)
 
-    # print('\nПороды животных (пример, specie=Собака):')
-    # pprint(client.get_mypets_animal_breeds(specie='Собака', breed=None))
+    print('\nПороды животных (пример, specie=собака):')
+    pprint(client.get_mypets_animal_breeds(specie='собака', breed=None))
 
-    # print('\nПраздники MyPets:')
-    # pprint(client.get_mypets_holidays())
+    print('\nПраздники MyPets:')
+    pprint(client.get_mypets_holidays())
 
-    # print('\nПосты MyPets:')
-    # pprint(client.get_mypets_posts(page=1, size=5))
+    print('\nПосты MyPets:')
+    pprint(client.get_mypets_posts(page=1, size=5))
 
     # 11. MyPets EGS (клиники, парки, приюты)
-    # section('11. MyPets EGS: клиники / парки / приюты')
-    # print('Клиники MyPets по адресу (через user_address):')
-    # clinics = client.get_mypets_clinics(
-    #     user_address=user_address,
-    #     location_radius=10,
-    # )
-    # pprint(clinics)
+    section('11. MyPets EGS: клиники / парки / приюты')
+    print('Клиники MyPets по адресу (через user_address):')
+    clinics = client.get_mypets_clinics(
+        user_address=user_address,
+        location_radius=3,
+    )
+    pprint(clinics)
 
-    # print('\nПарки / площадки MyPets по координатам:')
-    # parks = client.get_mypets_parks_playground(
-    #     location_latitude=lat,
-    #     location_longitude=lon,
-    #     location_radius=3,
-    # )
-    # pprint(parks)
+    print('\nПарки / площадки MyPets по координатам:')
+    parks = client.get_mypets_parks_playground(
+        location_latitude=lat,
+        location_longitude=lon,
+        location_radius=3,
+    )
+    pprint(parks)
 
-    # print('\nПриюты MyPets по координатам:')
-    # shelters = client.get_mypets_shelters(
-    #     location_latitude=lat,
-    #     location_longitude=lon,
-    #     location_radius=5,
-    # )
-    # pprint(shelters)
+    print('\nПриюты MyPets по координатам:')
+    shelters = client.get_mypets_shelters(
+        location_latitude=lat,
+        location_longitude=lon,
+        location_radius=5,
+    )
+    pprint(shelters)
 
     # 12. Спорт и спортплощадки
-    # section('12. Спорт и спортплощадки')
-    # print('Спортивные события в районе / городе:')
-    # sport_events = client.get_sport_events(
-    #     district=district,
-    #     page=1,
-    #     count=5,
-    # )
-    # pprint(sport_events)
+    section('12. Спорт и спортплощадки')
+    print('Спортивные события в районе / городе:')
+    sport_events = client.get_sport_events(
+        district=district,
+        page=1,
+        count=5,
+    )
+    pprint(sport_events)
 
-    # print('\nСпортивные площадки рядом с адресом:')
-    # sportgrounds = client.get_sportgrounds(
-    #     district=district,
-    #     location_latitude=lat,
-    #     location_longitude=lon,
-    #     location_radius=3,
-    #     page=1,
-    #     count=5,
-    # )
-    # pprint(sportgrounds)
+    print('\nСпортивные площадки рядом с адресом:')
+    sportgrounds = client.get_sportgrounds(
+        district=district,
+        location_latitude=lat,
+        location_longitude=lon,
+        location_radius=3,
+        page=1,
+        count=5,
+    )
+    pprint(sportgrounds)
 
-    # print('\nСчётчики спортплощадок по району:')
-    # pprint(client.get_sportgrounds_count_district(district=district))
+    print('\nСчётчики спортплощадок по району:')
+    pprint(client.get_sportgrounds_count_district(district=district))
 
-    # print('\nТипы спортплощадок:')
-    # pprint(client.get_sportgrounds_types())
+    print('\nТипы спортплощадок:')
+    pprint(client.get_sportgrounds_types())
 
-    # print('\nКарта спортплощадок (фильтр по району):')
-    # pprint(
-    #     client.get_sportgrounds_map(
-    #         district if 'district' in client.get_sportgrounds_count_district(district) else None
-    #     )
-    # )
+    print('\nКарта спортплощадок (фильтр по району):')
+    pprint(
+        client.get_sportgrounds_map(
+            district if 'district' in client.get_sportgrounds_count_district(district) else None
+        )
+    )
+
+    # 13. Муниципалитеты и районы
+    section('13. Муниципалитеты и районы')
+    print('Муниципалитеты региона:')
+    pprint(client.get_municipality())
+
+    print('\nРайоны региона:')
+    pprint(client.get_district())
+
+    # 14. Здание и управляющая компания
+    section('14. Здание и управляющая компания (mancompany)')
+    print('Информация о здании по адресу:')
+    try:
+        pprint(client.get_buildings_info(user_address))
+    except Exception as e:
+        print('Ошибка при вызове get_buildings_info:', e)
+
+    print('\nУправляющая компания по адресу:')
+    try:
+        pprint(client.get_info_mancompany_by_address(user_address))
+    except Exception as e:
+        print('Ошибка при вызове get_info_mancompany_by_address:', e)
+
+    print('\nКомпании, связанные с адресом (company_id по адресу):')
+    try:
+        pprint(client.get_info_mancompany_company(user_address=user_address))
+    except Exception as e:
+        print('Ошибка при вызове get_info_mancompany_company(user_address=...):', e)
 
