@@ -10,7 +10,6 @@
 
 from datetime import datetime
 import json
-import logging
 from pathlib import Path
 import pickle
 from typing import Any
@@ -22,10 +21,11 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_gigachat import GigaChatEmbeddings
 
+from app.logging_config import get_logger
 from app.rag.config import RAGConfig, get_rag_config
 from app.rag.models import ParsedDocument
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DocumentChunker:
@@ -57,7 +57,12 @@ class DocumentChunker:
         """
         # пропускаем слишком короткие документы
         if len(doc.content) < self.config.chunking.min_chunk_size:
-            logger.debug(f'Skipping short document: {doc.doc_id} ({len(doc.content)} chars)')
+            logger.debug(
+                'skipping_short_document',
+                doc_id=doc.doc_id,
+                content_length=len(doc.content),
+                min_required=self.config.chunking.min_chunk_size,
+            )
             return []
 
         # создаём базовый LangChain документ
@@ -89,7 +94,11 @@ class DocumentChunker:
             chunks = self.chunk_document(doc)
             all_chunks.extend(chunks)
 
-        logger.info(f'Created {len(all_chunks)} chunks from {len(docs)} documents')
+        logger.info(
+            'chunking_complete',
+            documents_count=len(docs),
+            chunks_count=len(all_chunks),
+        )
         return all_chunks
 
 
@@ -102,6 +111,7 @@ class HybridIndexer:
     - BM25Retriever для ключевого поиска
     - EnsembleRetriever для объединения результатов
     """
+
     # TODO: передавать >= 2 конфига (ChunkingConfig, IndexConfig) для гибкости
     def __init__(self, config: RAGConfig | None = None):
         self.config = config or get_rag_config()
@@ -137,10 +147,10 @@ class HybridIndexer:
         Ленивая инициализация embeddings
         """
         if self._embeddings is None:
-            logger.info('Initializing GigaChat embeddings...')
+            logger.info('embeddings_init', model='GigaChat Embeddings')
             self._embeddings = GigaChatEmbeddings(
-                model='Embeddings',         # модель для embeddings
-                verify_ssl_certs=False,     # для обхода проблем с сертификатами
+                model='Embeddings',  # модель для embeddings
+                verify_ssl_certs=False,  # для обхода проблем с сертификатами
             )
         return self._embeddings
 
@@ -155,9 +165,9 @@ class HybridIndexer:
 
             # проверяем, существует ли уже БД
             if self.config.index.chroma_persist_dir.exists():
-                logger.info(f'Loading existing ChromaDB from {persist_dir}')
+                logger.info('chromadb_load', path=persist_dir)
             else:
-                logger.info(f'Creating new ChromaDB at {persist_dir}')
+                logger.info('chromadb_create', path=persist_dir)
 
             self._vectorstore = Chroma(
                 collection_name=collection_name,
@@ -177,7 +187,11 @@ class HybridIndexer:
         Returns:
             Количество проиндексированных чанков
         """
-        logger.info(f'Starting indexing of {len(docs)} documents...')
+        logger.info(
+            'indexing_start',
+            documents_count=len(docs),
+            force_reindex=force_reindex,
+        )
 
         # создаём чанки
         # TODO: какие размеры чанков лучше (?)
@@ -191,7 +205,7 @@ class HybridIndexer:
             self._clear_index()
 
         # индексируем в ChromaDB
-        logger.info(f'Adding {len(chunks)} chunks to ChromaDB...')
+        logger.info('chromadb_indexing', chunks_count=len(chunks))
         self.vectorstore.add_documents(chunks)
 
         # сохраняем документы для BM25
@@ -217,7 +231,11 @@ class HybridIndexer:
         # сбрасываем ensemble retriever
         self._ensemble_retriever = None
 
-        logger.info(f'Indexing complete: {len(chunks)} chunks indexed')
+        logger.info(
+            'indexing_complete',
+            chunks_indexed=len(chunks),
+            documents_count=len(docs),
+        )
         return len(chunks)
 
     def get_retriever(self, weights: tuple[float, float] = (0.5, 0.5)) -> EnsembleRetriever:
@@ -256,7 +274,9 @@ class HybridIndexer:
         )
 
         logger.info(
-            f'Created ensemble retriever with weights: vector={weights[0]}, bm25={weights[1]}'
+            'ensemble_retriever_created',
+            vector_weight=weights[0],
+            bm25_weight=weights[1],
         )
         return self._ensemble_retriever
 
@@ -286,7 +306,7 @@ class HybridIndexer:
         """
         Очищает индекс
         """
-        logger.info('Clearing existing index...')
+        logger.info('index_clearing')
 
         # удаляем ChromaDB
         if self._vectorstore is not None:
@@ -366,11 +386,13 @@ def load_parsed_documents(path: Path | None = None) -> list[ParsedDocument]:
 # CLI для тестирования
 if __name__ == '__main__':
     import argparse
+    import os
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-    )
+    # Включаем DEBUG для CLI
+    os.environ['LOG_LEVEL'] = 'DEBUG'
+    from app.logging_config import configure_logging
+
+    configure_logging()
 
     parser = argparse.ArgumentParser(description='Index parsed documents')
     parser.add_argument('--reindex', action='store_true', help='Force reindex')

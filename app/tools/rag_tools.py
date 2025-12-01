@@ -1,40 +1,44 @@
 """
 LangChain Tools для RAG-поиска по базе знаний госуслуг.
+
+Использует LangGraph для структурированного пайплайна.
 """
 
-import logging
 import os
 
 from langchain_core.tools import tool
 
-logger = logging.getLogger(__name__)
+from app.logging_config import get_logger
 
-# ленивая инициализация enhanced search
-_enhanced_search = None
+logger = get_logger(__name__)
+
+# ленивая инициализация
+_rag_graph = None
 _simple_indexer = None
 
 
-def _get_enhanced_search():
+def _get_rag_graph():
     """
-    Получает singleton EnhancedRAGSearch
+    Получает singleton RAG Graph
     """
-    global _enhanced_search
-    if _enhanced_search is None:
-        from app.rag.enhancers import EnhancedRAGSearch
+    global _rag_graph
+    if _rag_graph is None:
+        from app.rag.graph import create_rag_graph
 
         # можно отключить через переменные окружения
         use_rewriting = os.getenv('RAG_USE_QUERY_REWRITING', 'true').lower() == 'true'
         use_grading = os.getenv('RAG_USE_DOCUMENT_GRADING', 'true').lower() == 'true'
 
         logger.info(
-            f'Initializing EnhancedRAGSearch '
-            f'(rewriting={use_rewriting}, grading={use_grading})...'
+            'rag_graph_init',
+            use_rewriting=use_rewriting,
+            use_grading=use_grading,
         )
-        _enhanced_search = EnhancedRAGSearch(
+        _rag_graph = create_rag_graph(
             use_query_rewriting=use_rewriting,
             use_document_grading=use_grading,
         )
-    return _enhanced_search
+    return _rag_graph
 
 
 def _get_simple_indexer():
@@ -45,7 +49,7 @@ def _get_simple_indexer():
     if _simple_indexer is None:
         from app.rag.indexer import HybridIndexer
 
-        logger.info('Initializing simple HybridIndexer...')
+        logger.info('simple_indexer_init')
         _simple_indexer = HybridIndexer()
         _simple_indexer._load_bm25_docs()
     return _simple_indexer
@@ -76,23 +80,41 @@ def search_city_services(query: str) -> str:
     Returns:
         Релевантная информация из базы знаний госуслуг с указанием источников
     """
-    logger.info(f'🔧 [TOOL CALL] search_city_services(query="{query}")')
+    logger.info('tool_call', tool='search_city_services', query=query)
 
     try:
-        # используем улучшенный поиск
-        enhanced_search = _get_enhanced_search()
-        results, metadata = enhanced_search.search(query, k=5, min_relevant=2)
+        # Используем RAG Graph
+        graph = _get_rag_graph()
+
+        # Инициализируем состояние
+        initial_state = {
+            'query': query,
+            'k': 5,
+            'min_relevant': 2,
+            'rewritten_query': None,
+            'retrieved_docs': [],
+            'deduplicated_docs': [],
+            'graded_docs': [],
+            'metadata': {},
+        }
+
+        # Выполняем граф
+        result = graph.invoke(initial_state)
+
+        results = result.get('graded_docs', [])
+        metadata = result.get('metadata', {})
 
         # логируем метаданные поиска
-        if metadata.get('rewritten_query'):
-            logger.info(f'📝 Query rewritten: "{query}" → "{metadata["rewritten_query"]}"')
         logger.info(
-            f'📊 Search stats: retrieved={metadata["retrieved_count"]}, '
-            f'filtered={metadata["filtered_count"]}'
+            'search_complete',
+            original_query=query,
+            rewritten_query=metadata.get('rewritten_query'),
+            retrieved_count=metadata.get('retrieved_count', 0),
+            filtered_count=metadata.get('final_count', 0),
         )
 
         if not results:
-            logger.warning(f'⚠️ [TOOL RESULT] Ничего не найдено по запросу: {query}')
+            logger.warning('search_no_results', query=query)
             return 'К сожалению, по вашему запросу ничего не найдено. Попробуйте переформулировать вопрос.'
 
         # форматируем результаты
@@ -114,19 +136,19 @@ def search_city_services(query: str) -> str:
             if len(content) > 800:
                 content = content[:800] + '...'
 
-            formatted_results.append(
-                f'## {title}\n'
-                f'**Источник:** {url}\n\n'
-                f'{content}'
-            )
+            formatted_results.append(f'## {title}\n**Источник:** {url}\n\n{content}')
 
-        logger.info(f'✅ [TOOL RESULT] Найдено {len(formatted_results)} результатов')
+        logger.info(
+            'tool_result',
+            tool='search_city_services',
+            results_count=len(formatted_results),
+        )
 
         response = '\n\n---\n\n'.join(formatted_results)
         return response
 
     except Exception as e:
-        logger.error(f'❌ [TOOL ERROR] {e}')
+        logger.error('tool_error', tool='search_city_services', error=str(e))
         return f'Произошла ошибка при поиске: {e}'
 
 
@@ -143,7 +165,7 @@ def search_city_services_simple(query: str) -> str:
     Returns:
         Информация из базы знаний
     """
-    logger.info(f'🔧 [TOOL CALL] search_city_services_simple(query="{query}")')
+    logger.info('tool_call', tool='search_city_services_simple', query=query)
 
     try:
         indexer = _get_simple_indexer()
@@ -162,7 +184,7 @@ def search_city_services_simple(query: str) -> str:
         return '\n\n---\n\n'.join(formatted)
 
     except Exception as e:
-        logger.error(f'❌ [TOOL ERROR] {e}')
+        logger.error('tool_error', tool='search_city_services_simple', error=str(e))
         return f'Ошибка: {e}'
 
 
