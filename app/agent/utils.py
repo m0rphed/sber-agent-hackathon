@@ -4,7 +4,7 @@ from langchain_core.runnables.config import CONFIG_KEYS, COPIABLE_KEYS
 from langgraph.checkpoint.sqlite import RunnableConfig
 
 
-def langchain_cast_sqlite_config(config: dict[str, dict]) -> RunnableConfig:
+def langchain_cast_sqlite_config(config: dict[str, dict | object]) -> RunnableConfig:
     res = cast(
         'RunnableConfig',
         {
