@@ -426,6 +426,36 @@ def create_rag_graph(
 
 
 # =============================================================================
+# Graph Cache
+# =============================================================================
+
+# Кэш для RAG графов (по конфигурации)
+_rag_graph_cache: dict[tuple[bool, bool, bool], StateGraph] = {}
+
+
+def get_rag_graph(
+    use_query_rewriting: bool = True,
+    use_document_grading: bool = True,
+    use_toxicity_check: bool = True,
+):
+    """
+    Возвращает кэшированный RAG Graph.
+
+    Граф создаётся один раз для каждой комбинации параметров и переиспользуется.
+    """
+    cache_key = (use_query_rewriting, use_document_grading, use_toxicity_check)
+
+    if cache_key not in _rag_graph_cache:
+        _rag_graph_cache[cache_key] = create_rag_graph(
+            use_query_rewriting=use_query_rewriting,
+            use_document_grading=use_document_grading,
+            use_toxicity_check=use_toxicity_check,
+        )
+
+    return _rag_graph_cache[cache_key]
+
+
+# =============================================================================
 # Convenience Function
 # =============================================================================
 
@@ -453,7 +483,8 @@ def search_with_graph(
         Кортеж (документы, метаданные)
         Если запрос токсичный - документы=[], metadata содержит toxicity_blocked=True
     """
-    graph = create_rag_graph(
+    # Используем кэшированный граф
+    graph = get_rag_graph(
         use_query_rewriting=use_query_rewriting,
         use_document_grading=use_document_grading,
         use_toxicity_check=use_toxicity_check,

@@ -374,29 +374,116 @@ def safe_chat(
         return chat_with_memory(agent, user_message, session_id, memory)
 
 
+# =============================================================================
+# Supervisor Graph API (новая архитектура)
+# =============================================================================
+
+
+def chat_supervisor(
+    user_message: str,
+    session_id: str = 'default',
+    memory: ConversationMemory | None = None,
+) -> str:
+    """
+    Основная функция для чата через Supervisor Graph.
+
+    Это рекомендуемый способ взаимодействия с агентом.
+    Supervisor автоматически:
+    - Проверяет токсичность
+    - Классифицирует intent
+    - Маршрутизирует на нужный обработчик (API/RAG/Conversation)
+
+    Args:
+        user_message: Сообщение пользователя
+        session_id: ID сессии для сохранения контекста
+        memory: Экземпляр памяти (если None, используется глобальный)
+
+    Returns:
+        Ответ агента
+    """
+    from app.agent.supervisor import invoke_supervisor
+
+    if memory is None:
+        memory = get_memory()
+
+    # Получаем историю диалога
+    chat_history = memory.get_history(session_id)
+
+    logger.info(
+        'chat_supervisor_start',
+        session_id=session_id,
+        chat_history_length=len(chat_history),
+        message_preview=user_message[:100] + '...' if len(user_message) > 100 else user_message,
+    )
+
+    # Вызываем Supervisor Graph
+    response, metadata = invoke_supervisor(
+        query=user_message,
+        session_id=session_id,
+        chat_history=chat_history,
+    )
+
+    # Сохраняем обмен в память (если не токсичный)
+    if not metadata.get('toxicity_blocked', False):
+        memory.add_exchange(session_id, user_message, response)
+
+    logger.info(
+        'chat_supervisor_complete',
+        session_id=session_id,
+        response_length=len(response),
+        intent=metadata.get('handler', 'unknown'),
+        toxicity_blocked=metadata.get('toxicity_blocked', False),
+    )
+
+    return response
+
+
+# =============================================================================
+# CLI для тестирования
+# =============================================================================
+
+
 if __name__ == '__main__':
     import sys
 
-    # выбираем режим: persistence или in-memory
+    # Режимы:
+    # --legacy  - старый ReAct агент
+    # --persist - с SQLite persistence (только для legacy)
+    # (по умолчанию) - новый Supervisor Graph
+
+    use_legacy = '--legacy' in sys.argv
     use_persistence = '--persist' in sys.argv
-    thread_id = 'test_user_123'
-
-    print(f'Режим: {"SQLite persistence" if use_persistence else "In-memory"}')
-    print(f'Thread ID: {thread_id}')
-
-    agent = create_city_agent(with_persistence=use_persistence)
+    session_id = 'test_user_123'
 
     test_queries = [
-        'Привет! Меня зовут Алексей.',
+        'Привет!',
         'Где ближайший МФЦ к Невскому проспекту 1?',
+        'Как получить загранпаспорт?',
         'Ты идиот!',  # тест фильтра токсичности
-        'Напомни, как меня зовут?',
+        'Спасибо!',
     ]
 
-    for query in test_queries:
-        print(f'\n{"=" * 50}')
-        print(f'Вопрос: {query}')
-        print(f'{"=" * 50}')
+    if use_legacy:
+        # Старый ReAct агент
+        print(f'Режим: LEGACY ReAct {"+ SQLite" if use_persistence else "+ In-memory"}')
+        print(f'Session ID: {session_id}')
 
-        response = safe_chat(agent, query, thread_id, use_persistence)
-        print(f'Ответ: {response}')
+        agent = create_city_agent(with_persistence=use_persistence)
+
+        for query in test_queries:
+            print(f'\n{"=" * 50}')
+            print(f'Вопрос: {query}')
+            print(f'{"=" * 50}')
+            response = safe_chat(agent, query, session_id, use_persistence)
+            print(f'Ответ: {response[:300]}{"..." if len(response) > 300 else ""}')
+    else:
+        # Новый Supervisor Graph (рекомендуется)
+        print('Режим: SUPERVISOR GRAPH (рекомендуется)')
+        print(f'Session ID: {session_id}')
+
+        for query in test_queries:
+            print(f'\n{"=" * 50}')
+            print(f'Вопрос: {query}')
+            print(f'{"=" * 50}')
+            response = chat_supervisor(query, session_id)
+            print(f'Ответ: {response[:300]}{"..." if len(response) > 300 else ""}')
