@@ -359,20 +359,28 @@ class EnhancedRAGSearch:
         self.query_rewriter = QueryRewriter(llm) if use_query_rewriting else None
         self.document_grader = DocumentGrader(llm) if use_document_grading else None
 
-        # ленивая загрузка индексатора
-        self._indexer = None
+        # ленивая загрузка retriever через singleton
+        self._retriever = None
 
     @property
-    def indexer(self):
+    def retriever(self):
         """
-        Ленивая инициализация индексатора
-        """
-        if self._indexer is None:
-            from app.rag.indexer import HybridIndexer
+        Ленивая инициализация retriever (singleton).
 
-            self._indexer = HybridIndexer()
-            self._indexer._load_bm25_docs()
-        return self._indexer
+        Использует кэшированный HybridRetriever вместо создания
+        нового HybridIndexer при каждом запросе.
+        """
+        if self._retriever is None:
+            from app.rag.retriever import get_retriever
+
+            self._retriever = get_retriever()
+        return self._retriever
+
+    # Backward compatibility alias
+    @property
+    def indexer(self):
+        """Deprecated: use retriever instead."""
+        return self.retriever.indexer
 
     def search(
         self,
@@ -407,7 +415,7 @@ class EnhancedRAGSearch:
         # Step 2: Hybrid Search
         # запрашиваем больше документов, чтобы после фильтрации осталось достаточно
         fetch_k = k * 2 if self.document_grader else k
-        documents = self.indexer.search(search_query, k=fetch_k)
+        documents = self.retriever.search(search_query, k=fetch_k)
         metadata['retrieved_count'] = len(documents)
 
         # Step 3: Document Grading

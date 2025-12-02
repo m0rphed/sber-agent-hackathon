@@ -162,9 +162,10 @@ def retrieve_documents_node(state: RAGState) -> dict:
     """
     Узел 2: Гибридный поиск документов.
 
-    Использует EnsembleRetriever (vector + BM25) для поиска.
+    Использует singleton HybridRetriever (vector + BM25) для поиска.
+    Retriever кэшируется — повторные запросы не создают новый indexer.
     """
-    from app.rag.indexer import HybridIndexer
+    from app.rag.retriever import get_retriever
 
     # Используем переписанный запрос если есть
     search_query = state.get('rewritten_query') or state['query']
@@ -180,10 +181,9 @@ def retrieve_documents_node(state: RAGState) -> dict:
         fetch_k=fetch_k,
     )
 
-    indexer = HybridIndexer()
-    indexer._load_bm25_docs()  # Загружаем BM25 документы
-
-    documents = indexer.search(search_query, k=fetch_k)
+    # Singleton retriever — не создаём новый при каждом запросе
+    retriever = get_retriever()
+    documents = retriever.search(search_query, k=fetch_k)
 
     logger.info(
         'node_complete',

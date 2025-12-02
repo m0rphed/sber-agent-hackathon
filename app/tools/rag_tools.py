@@ -14,7 +14,6 @@ logger = get_logger(__name__)
 
 # ленивая инициализация
 _rag_graph = None
-_simple_indexer = None
 
 
 def _get_rag_graph():
@@ -41,18 +40,15 @@ def _get_rag_graph():
     return _rag_graph
 
 
-def _get_simple_indexer():
+def _get_simple_retriever():
     """
-    Получает singleton простого индексатора (без улучшений)
-    """
-    global _simple_indexer
-    if _simple_indexer is None:
-        from app.rag.indexer import HybridIndexer
+    Получает singleton retriever (без улучшений query rewriting/grading).
 
-        logger.info('simple_indexer_init')
-        _simple_indexer = HybridIndexer()
-        _simple_indexer._load_bm25_docs()
-    return _simple_indexer
+    Использует кэшированный HybridRetriever из app.rag.retriever.
+    """
+    from app.rag.retriever import get_retriever
+
+    return get_retriever()
 
 
 @tool
@@ -168,8 +164,8 @@ def search_city_services_simple(query: str) -> str:
     logger.info('tool_call', tool='search_city_services_simple', query=query)
 
     try:
-        indexer = _get_simple_indexer()
-        results = indexer.search(query, k=5)
+        retriever = _get_simple_retriever()
+        results = retriever.search(query, k=5)
 
         if not results:
             return 'Ничего не найдено.'
