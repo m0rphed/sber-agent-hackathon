@@ -9,14 +9,14 @@
 Использование:
     from app.agent.unified import chat, AgentType
 
-    # По умолчанию - supervisor
+    # По умолчанию - supervisor (in-memory)
     response = chat("Как получить загранпаспорт?")
+
+    # С персистентной памятью (SQLite)
+    response = chat("Где МФЦ?", session_id="user123", use_persistence=True)
 
     # Явный выбор архитектуры
     response = chat("Где МФЦ?", agent_type=AgentType.HYBRID)
-
-    # С историей
-    response = chat("Спасибо!", session_id="user123")
 """
 
 from enum import Enum
@@ -45,6 +45,7 @@ def chat(
     message: str,
     session_id: str = 'default',
     agent_type: AgentType | str = DEFAULT_AGENT_TYPE,
+    use_persistence: bool = False,
     memory: ConversationMemory | None = None,
 ) -> str:
     """
@@ -52,9 +53,11 @@ def chat(
 
     Args:
         message: Сообщение пользователя
-        session_id: ID сессии для сохранения контекста
+        session_id: ID сессии (thread_id для checkpointer)
         agent_type: Тип агента (supervisor, hybrid, legacy)
-        memory: Экземпляр памяти (если None, используется глобальный)
+        use_persistence: Использовать персистентную память (SQLite).
+                         Если True, история сохраняется между перезапусками.
+        memory: Экземпляр in-memory памяти (игнорируется при use_persistence=True)
 
     Returns:
         Ответ агента
@@ -67,33 +70,42 @@ def chat(
             logger.warning(f'Unknown agent type: {agent_type}, using default')
             agent_type = DEFAULT_AGENT_TYPE
 
-    if memory is None:
-        memory = get_memory()
+    # Определяем источник истории
+    chat_history: list[BaseMessage] = []
 
-    # Получаем историю
-    chat_history = memory.get_history(session_id)
+    if use_persistence:
+        # При персистентности история загружается checkpointer'ом автоматически
+        # Не нужно передавать chat_history вручную
+        pass
+    else:
+        # In-memory режим — используем ConversationMemory
+        if memory is None:
+            memory = get_memory()
+        chat_history = memory.get_history(session_id)
 
     logger.info(
         'unified_chat_start',
         agent_type=agent_type.value,
         session_id=session_id,
+        use_persistence=use_persistence,
         message_preview=message[:100] + '...' if len(message) > 100 else message,
         history_length=len(chat_history),
     )
 
     # Вызываем нужный агент
     if agent_type == AgentType.SUPERVISOR:
-        response, metadata = _invoke_supervisor(message, session_id, chat_history)
+        response, metadata = _invoke_supervisor(message, session_id, chat_history, use_persistence)
     elif agent_type == AgentType.HYBRID:
-        response, metadata = _invoke_hybrid(message, session_id, chat_history)
+        response, metadata = _invoke_hybrid(message, session_id, chat_history, use_persistence)
     elif agent_type == AgentType.LEGACY:
-        response, metadata = _invoke_legacy(message, session_id, chat_history)
+        response, metadata = _invoke_legacy(message, session_id, chat_history, use_persistence)
     else:
         raise ValueError(f'Unknown agent type: {agent_type}')
 
-    # Сохраняем в память (если не токсичный)
-    if not metadata.get('toxicity_blocked', False):
-        memory.add_exchange(session_id, message, response)
+    # Сохраняем в in-memory память только если не персистентный режим
+    if not use_persistence and not metadata.get('toxicity_blocked', False):
+        if memory is not None:
+            memory.add_exchange(session_id, message, response)
 
     logger.info(
         'unified_chat_complete',
@@ -110,6 +122,7 @@ def chat_with_metadata(
     session_id: str = 'default',
     agent_type: AgentType | str = DEFAULT_AGENT_TYPE,
     memory: ConversationMemory | None = None,
+    use_persistence: bool = False,
 ) -> tuple[str, dict]:
     """
     Чат с возвратом метаданных.
@@ -118,7 +131,9 @@ def chat_with_metadata(
         message: Сообщение пользователя
         session_id: ID сессии
         agent_type: Тип агента
-        memory: Экземпляр памяти
+        memory: Экземпляр памяти (игнорируется при use_persistence=True)
+        use_persistence: Использовать персистентную память (SQLite).
+            Если True, то история сохраняется в БД и доступна после перезапуска.
 
     Returns:
         Кортеж (ответ, метаданные)
@@ -129,21 +144,26 @@ def chat_with_metadata(
         except ValueError:
             agent_type = DEFAULT_AGENT_TYPE
 
-    if memory is None:
-        memory = get_memory()
-
-    chat_history = memory.get_history(session_id)
+    # При персистентном режиме не используем in-memory память
+    if use_persistence:
+        chat_history: list = []
+        memory = None
+    else:
+        if memory is None:
+            memory = get_memory()
+        chat_history = memory.get_history(session_id)
 
     if agent_type == AgentType.SUPERVISOR:
-        response, metadata = _invoke_supervisor(message, session_id, chat_history)
+        response, metadata = _invoke_supervisor(message, session_id, chat_history, use_persistence)
     elif agent_type == AgentType.HYBRID:
-        response, metadata = _invoke_hybrid(message, session_id, chat_history)
+        response, metadata = _invoke_hybrid(message, session_id, chat_history, use_persistence)
     elif agent_type == AgentType.LEGACY:
-        response, metadata = _invoke_legacy(message, session_id, chat_history)
+        response, metadata = _invoke_legacy(message, session_id, chat_history, use_persistence)
     else:
         raise ValueError(f'Unknown agent type: {agent_type}')
 
-    if not metadata.get('toxicity_blocked', False):
+    # Сохраняем в in-memory память только если не персистентный режим
+    if not use_persistence and memory is not None and not metadata.get('toxicity_blocked', False):
         memory.add_exchange(session_id, message, response)
 
     metadata['agent_type'] = agent_type.value
@@ -159,28 +179,41 @@ def _invoke_supervisor(
     query: str,
     session_id: str,
     chat_history: list[BaseMessage],
+    with_persistence: bool = False,
 ) -> tuple[str, dict]:
     """Вызов Supervisor Graph."""
     from app.agent.supervisor import invoke_supervisor
 
-    return invoke_supervisor(query, session_id, chat_history)
+    return invoke_supervisor(
+        query,
+        session_id=session_id,
+        chat_history=chat_history,
+        with_persistence=with_persistence,
+    )
 
 
 def _invoke_hybrid(
     query: str,
     session_id: str,
     chat_history: list[BaseMessage],
+    with_persistence: bool = False,
 ) -> tuple[str, dict]:
     """Вызов Hybrid Agent Graph."""
     from app.agent.hybrid import invoke_hybrid
 
-    return invoke_hybrid(query, session_id, chat_history)
+    return invoke_hybrid(
+        query,
+        session_id=session_id,
+        chat_history=chat_history,
+        with_persistence=with_persistence,
+    )
 
 
 def _invoke_legacy(
     query: str,
     session_id: str,
     chat_history: list[BaseMessage],
+    with_persistence: bool = False,
 ) -> tuple[str, dict]:
     """Вызов Legacy ReAct агента."""
     from app.agent.city_agent import create_city_agent, invoke_agent
@@ -196,9 +229,14 @@ def _invoke_legacy(
             'handler': 'toxicity_filter',
         }
 
-    # Создаём и вызываем агента
-    agent = create_city_agent(with_persistence=False)
-    response = invoke_agent(agent, query, chat_history)
+    # Создаём и вызываем агента (legacy поддерживает with_persistence нативно)
+    agent = create_city_agent(with_persistence=with_persistence)
+    response = invoke_agent(
+        agent,
+        query,
+        chat_history=chat_history if not with_persistence else None,
+        thread_id=session_id if with_persistence else None,
+    )
 
     return response, {
         'handler': 'legacy_react',

@@ -587,16 +587,20 @@ def toxic_response_node(state: SupervisorState) -> dict:
 # =============================================================================
 
 
-def create_supervisor_graph():
+def create_supervisor_graph(checkpointer=None):
     """
     Создаёт Supervisor Graph.
+
+    Args:
+        checkpointer: Optional checkpointer для персистентности.
+                      Если None — граф работает in-memory.
 
     Returns:
         Скомпилированный граф
     """
     from app.agent.resilience import get_api_retry_policy, get_llm_retry_policy
 
-    logger.info('supervisor_graph_build_start')
+    logger.info('supervisor_graph_build_start', with_checkpointer=checkpointer is not None)
 
     builder = StateGraph(SupervisorState)
 
@@ -646,9 +650,14 @@ def create_supervisor_graph():
 
     builder.add_edge('generate_response', END)
 
-    graph = builder.compile()
+    # Компилируем с checkpointer если передан
+    graph = builder.compile(checkpointer=checkpointer)
 
-    logger.info('supervisor_graph_build_complete', nodes=list(graph.nodes.keys()))
+    logger.info(
+        'supervisor_graph_build_complete',
+        nodes=list(graph.nodes.keys()),
+        with_checkpointer=checkpointer is not None,
+    )
 
     return graph
 
@@ -657,39 +666,53 @@ def create_supervisor_graph():
 # Convenience Functions
 # =============================================================================
 
-# Кэш для Supervisor Graph (singleton)
-_supervisor_graph = None
+# Кэш для Supervisor Graph (по типу: in-memory / persistent)
+_supervisor_graph_cache: dict[str, object] = {}
 
 
-def get_supervisor_graph():
+def get_supervisor_graph(with_persistence: bool = False):
     """
     Возвращает singleton Supervisor Graph.
 
-    Граф создаётся один раз и переиспользуется.
+    Args:
+        with_persistence: Если True, создаёт граф с SqliteSaver для персистентности
+
+    Returns:
+        Скомпилированный граф
     """
-    global _supervisor_graph
-    if _supervisor_graph is None:
-        _supervisor_graph = create_supervisor_graph()
-    return _supervisor_graph
+    cache_key = 'persistent' if with_persistence else 'memory'
+
+    if cache_key not in _supervisor_graph_cache:
+        checkpointer = None
+        if with_persistence:
+            from app.agent.persistent_memory import get_checkpointer
+
+            checkpointer = get_checkpointer()
+
+        _supervisor_graph_cache[cache_key] = create_supervisor_graph(checkpointer=checkpointer)
+
+    return _supervisor_graph_cache[cache_key]
 
 
 def invoke_supervisor(
     query: str,
     session_id: str = 'default',
     chat_history: list[BaseMessage] | None = None,
+    with_persistence: bool = False,
 ) -> tuple[str, dict]:
     """
     Вызывает Supervisor Graph.
 
     Args:
         query: Запрос пользователя
-        session_id: ID сессии
-        chat_history: История диалога
+        session_id: ID сессии (thread_id для checkpointer)
+        chat_history: История диалога (игнорируется при with_persistence=True)
+        with_persistence: Использовать персистентную память
 
     Returns:
         Кортеж (ответ, метаданные)
     """
-    graph = get_supervisor_graph()  # Используем кэшированный граф
+    graph = get_supervisor_graph(with_persistence=with_persistence)
 
     initial_state: SupervisorState = {
         'query': query,
@@ -705,9 +728,19 @@ def invoke_supervisor(
         'metadata': {},
     }
 
-    logger.info('supervisor_invoke_start', query=query[:100], session_id=session_id)
+    logger.info(
+        'supervisor_invoke_start',
+        query=query[:100],
+        session_id=session_id,
+        with_persistence=with_persistence,
+    )
 
-    result = graph.invoke(initial_state)
+    # Если с персистентностью — передаём thread_id в config
+    if with_persistence:
+        config = {'configurable': {'thread_id': session_id}}
+        result = graph.invoke(initial_state, config=config)
+    else:
+        result = graph.invoke(initial_state)
 
     response = result.get('final_response', 'Извините, не удалось обработать запрос.')
     metadata = result.get('metadata', {})

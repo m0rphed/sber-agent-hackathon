@@ -4,19 +4,24 @@
 Доступные API:
 
 1. Унифицированный API (рекомендуется):
-   - chat(message, session_id, agent_type) -> str
-   - chat_with_metadata(message, session_id, agent_type) -> tuple[str, dict]
+   - chat(message, session_id, agent_type, use_persistence) -> str
+   - chat_with_metadata(message, session_id, agent_type, use_persistence) -> tuple[str, dict]
    - AgentType.SUPERVISOR | AgentType.HYBRID | AgentType.LEGACY
 
 2. Supervisor Graph (Вариант 2):
-   - invoke_supervisor(query, session_id, chat_history) -> tuple[str, dict]
+   - invoke_supervisor(query, session_id, chat_history, with_persistence) -> tuple[str, dict]
 
 3. Hybrid Agent Graph (Вариант 3):
-   - invoke_hybrid(query, session_id, chat_history) -> tuple[str, dict]
+   - invoke_hybrid(query, session_id, chat_history, with_persistence) -> tuple[str, dict]
 
 4. Legacy ReAct Agent:
    - create_city_agent(with_persistence) -> CompiledStateGraph
    - safe_chat(agent, user_message, session_id) -> str
+
+5. Persistent Memory:
+   - get_checkpointer() -> SqliteSaver
+   - get_chat_history(thread_id) -> list[BaseMessage]
+   - clear_chat_history(thread_id) -> bool
 """
 
 from app.agent.city_agent import (
@@ -33,6 +38,11 @@ from app.agent.hybrid import (
     create_hybrid_graph,
     get_hybrid_graph,
     invoke_hybrid,
+)
+from app.agent.persistent_memory import (
+    clear_chat_history,
+    get_chat_history,
+    get_checkpointer,
 )
 from app.agent.resilience import (
     AgentError,
@@ -90,6 +100,10 @@ __all__ = [
     'invoke_agent',
     'chat_with_memory',
     'chat_with_persistence',
+    # Persistent Memory
+    'get_checkpointer',
+    'get_chat_history',
+    'clear_chat_history',
     # Resilience API
     'AgentErrorType',
     'AgentError',

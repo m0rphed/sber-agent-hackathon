@@ -401,16 +401,20 @@ def intent_router(state: HybridState) -> str:
 # =============================================================================
 
 
-def create_hybrid_graph():
+def create_hybrid_graph(checkpointer=None):
     """
     Создаёт Hybrid Agent Graph.
+
+    Args:
+        checkpointer: Optional checkpointer для персистентности.
+                      Если None — граф работает in-memory.
 
     Returns:
         Скомпилированный граф
     """
     from app.agent.resilience import get_api_retry_policy, get_llm_retry_policy
 
-    logger.info('hybrid_graph_build_start')
+    logger.info('hybrid_graph_build_start', with_checkpointer=checkpointer is not None)
 
     builder = StateGraph(HybridState)
 
@@ -450,9 +454,14 @@ def create_hybrid_graph():
 
     builder.add_edge('generate_response', END)
 
-    graph = builder.compile()
+    # Компилируем с checkpointer если передан
+    graph = builder.compile(checkpointer=checkpointer)
 
-    logger.info('hybrid_graph_build_complete', nodes=list(graph.nodes.keys()))
+    logger.info(
+        'hybrid_graph_build_complete',
+        nodes=list(graph.nodes.keys()),
+        with_checkpointer=checkpointer is not None,
+    )
 
     return graph
 
@@ -461,34 +470,53 @@ def create_hybrid_graph():
 # Cache & Convenience Functions
 # =============================================================================
 
-_hybrid_graph = None
+# Кэш для Hybrid Graph (по типу: in-memory / persistent)
+_hybrid_graph_cache: dict[str, object] = {}
 
 
-def get_hybrid_graph():
-    """Возвращает кэшированный Hybrid Graph."""
-    global _hybrid_graph
-    if _hybrid_graph is None:
-        _hybrid_graph = create_hybrid_graph()
-    return _hybrid_graph
+def get_hybrid_graph(with_persistence: bool = False):
+    """
+    Возвращает singleton Hybrid Graph.
+
+    Args:
+        with_persistence: Если True, создаёт граф с SqliteSaver для персистентности
+
+    Returns:
+        Скомпилированный граф
+    """
+    cache_key = 'persistent' if with_persistence else 'memory'
+
+    if cache_key not in _hybrid_graph_cache:
+        checkpointer = None
+        if with_persistence:
+            from app.agent.persistent_memory import get_checkpointer
+
+            checkpointer = get_checkpointer()
+
+        _hybrid_graph_cache[cache_key] = create_hybrid_graph(checkpointer=checkpointer)
+
+    return _hybrid_graph_cache[cache_key]
 
 
 def invoke_hybrid(
     query: str,
     session_id: str = 'default',
     chat_history: list[BaseMessage] | None = None,
+    with_persistence: bool = False,
 ) -> tuple[str, dict]:
     """
     Вызывает Hybrid Agent Graph.
 
     Args:
         query: Запрос пользователя
-        session_id: ID сессии
-        chat_history: История диалога
+        session_id: ID сессии (thread_id для checkpointer)
+        chat_history: История диалога (игнорируется при with_persistence=True)
+        with_persistence: Использовать персистентную память
 
     Returns:
         Кортеж (ответ, метаданные)
     """
-    graph = get_hybrid_graph()
+    graph = get_hybrid_graph(with_persistence=with_persistence)
 
     initial_state: HybridState = {
         'query': query,
@@ -503,9 +531,19 @@ def invoke_hybrid(
         'metadata': {},
     }
 
-    logger.info('hybrid_invoke_start', query=query[:100], session_id=session_id)
+    logger.info(
+        'hybrid_invoke_start',
+        query=query[:100],
+        session_id=session_id,
+        with_persistence=with_persistence,
+    )
 
-    result = graph.invoke(initial_state)
+    # Если с персистентностью — передаём thread_id в config
+    if with_persistence:
+        config = {'configurable': {'thread_id': session_id}}
+        result = graph.invoke(initial_state, config=config)
+    else:
+        result = graph.invoke(initial_state)
 
     response = result.get('final_response', 'Извините, не удалось обработать запрос.')
     metadata = result.get('metadata', {})
