@@ -16,6 +16,7 @@ dependencies = [
     "langchain-gigachat>=0.3.13a1",
     "langgraph>=1.0.4",
     "langgraph-checkpoint-sqlite>=3.0.0",
+    "langgraph-sdk>=0.2.10",
     "langsmith>=0.4.49",
     "maxapi>=0.9.9",
     "numpy>=2.3.5",

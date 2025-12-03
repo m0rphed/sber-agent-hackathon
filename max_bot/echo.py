@@ -3,9 +3,11 @@ import logging
 import os
 
 from dotenv import load_dotenv
+from langgraph_func import chat_with_agent
 from maxapi import Bot, Dispatcher
 from maxapi.filters import F
 from maxapi.types import MessageCreated
+import rich
 
 load_dotenv()
 
@@ -15,9 +17,13 @@ bot = Bot(os.getenv('TOKEN_MAX'))
 dp = Dispatcher()
 
 
+
 @dp.message_created(F.message.body.text)
 async def echo(event: MessageCreated):
-    await event.message.answer(f"Повторяю за вами: {event.message.body.text}")
+    rich.print(event)
+    rich.print(event.chat.chat_id)
+    result = await chat_with_agent(event.chat.chat_id, event.message.body.text)
+    await event.message.answer(f"ОТВЕТ: {result}")
 
 
 async def main():
