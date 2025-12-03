@@ -9,6 +9,7 @@ import os
 from langchain_core.tools import tool
 
 from app.logging_config import get_logger
+from app.rag.config import get_rag_config
 
 logger = get_logger(__name__)
 
@@ -81,12 +82,13 @@ def search_city_services(query: str) -> str:
     try:
         # Используем RAG Graph
         graph = _get_rag_graph()
+        rag_config = get_rag_config()
 
-        # Инициализируем состояние
+        # Инициализируем состояние с параметрами из конфига
         initial_state = {
             'query': query,
-            'k': 5,
-            'min_relevant': 2,
+            'k': rag_config.search.k,
+            'min_relevant': rag_config.search.min_relevant,
             'rewritten_query': None,
             'retrieved_docs': [],
             'deduplicated_docs': [],
@@ -116,6 +118,8 @@ def search_city_services(query: str) -> str:
         # форматируем результаты
         formatted_results = []
         seen_urls = set()  # без дубликатов по URL
+        # Используем увеличенный лимит для tool output (больше контекста для LLM)
+        content_limit = rag_config.search.content_preview_limit * 2
 
         for doc in results:
             url = doc.metadata.get('url', '')
@@ -129,8 +133,8 @@ def search_city_services(query: str) -> str:
             content = doc.page_content.strip()
 
             # ограничиваем длину контента
-            if len(content) > 800:
-                content = content[:800] + '...'
+            if len(content) > content_limit:
+                content = content[:content_limit] + '...'
 
             formatted_results.append(f'## {title}\n**Источник:** {url}\n\n{content}')
 
@@ -165,16 +169,19 @@ def search_city_services_simple(query: str) -> str:
 
     try:
         retriever = _get_simple_retriever()
-        results = retriever.search(query, k=5)
+        rag_config = get_rag_config()
+        results = retriever.search(query, k=rag_config.search.k)
 
         if not results:
             return 'Ничего не найдено.'
 
         formatted = []
-        for doc in results[:3]:
+        content_limit = rag_config.search.content_preview_limit
+        # Ограничиваем количество результатов для simple версии (min_relevant)
+        for doc in results[:rag_config.search.min_relevant]:
             title = doc.metadata.get('title', 'N/A')
             url = doc.metadata.get('url', '')
-            content = doc.page_content[:500]
+            content = doc.page_content[:content_limit]
             formatted.append(f'## {title}\n{url}\n\n{content}...')
 
         return '\n\n---\n\n'.join(formatted)

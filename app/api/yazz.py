@@ -1,5 +1,7 @@
-import requests
 from pprint import pprint
+
+import requests
+
 from app.config import API_GEO as api_geo, API_SITE as api_site, REGION_ID as DEFAULT_REGION_ID
 
 

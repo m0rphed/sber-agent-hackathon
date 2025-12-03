@@ -21,12 +21,21 @@ Supervisor Graph - унифицированный агент с роутинго
 """
 
 from enum import Enum
-from typing import Any, TypedDict
+from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 
+from app.agent.state import (
+    AgentState,
+    create_ai_response,
+    create_error_response,
+    get_chat_history,
+    get_last_user_message,
+)
+from app.config import get_agent_config
 from app.logging_config import get_logger
+from app.rag.config import get_rag_config
 
 logger = get_logger(__name__)
 
@@ -124,33 +133,16 @@ INTENT_KEYWORDS = {
 # =============================================================================
 
 
-class SupervisorState(TypedDict):
+class SupervisorState(AgentState):
     """
     Состояние Supervisor графа.
 
-    Передаётся между всеми узлами.
+    Наследует от AgentState (MessagesState + общие поля).
+    Добавляет специфичные для Supervisor поля.
     """
 
-    # Входные данные
-    query: str  # Исходный запрос пользователя
-    session_id: str  # ID сессии для памяти
-    chat_history: list[BaseMessage]  # История диалога
-
-    # Toxicity
-    is_toxic: bool
-    toxicity_response: str | None
-
-    # Intent classification
-    intent: str  # Intent enum value
-    intent_confidence: float
-    extracted_params: dict[str, Any]  # Извлечённые параметры (адрес, район и т.д.)
-
-    # Результаты обработки
-    tool_result: str | None  # Результат вызова tool/RAG
-    final_response: str | None  # Финальный ответ пользователю
-
-    # Метаданные
-    metadata: dict
+    # Supervisor-specific: извлечённые параметры
+    extracted_params: dict[str, Any]  # Адрес, район, категория и т.д.
 
 
 # =============================================================================
@@ -164,7 +156,7 @@ def check_toxicity_node(state: SupervisorState) -> dict:
     """
     from app.services.toxicity import get_toxicity_filter
 
-    query = state['query']
+    query = get_last_user_message(state)
 
     logger.info('supervisor_node', node='check_toxicity', query_length=len(query))
 
@@ -198,31 +190,13 @@ def classify_intent_node(state: SupervisorState) -> dict:
 
     Использует LLM для точной классификации и извлечения параметров.
     """
-    from app.agent.llm import get_llm
+    from app.agent.llm import get_llm_for_classification
 
-    query = state['query'].lower()
+    query = get_last_user_message(state)
 
-    logger.info('supervisor_node', node='classify_intent', query=query[:100])
-
-    # Сначала пробуем простую классификацию по ключевым словам
-    detected_intent = _keyword_classification(query)
-
-    if detected_intent != Intent.UNKNOWN:
-        logger.info(
-            'intent_classified',
-            method='keywords',
-            intent=detected_intent.value,
-        )
-        return {
-            'intent': detected_intent.value,
-            'intent_confidence': 0.8,
-            'extracted_params': _extract_params_simple(query, detected_intent),
-            'metadata': {**state.get('metadata', {}), 'classification_method': 'keywords'},
-        }
-
-    # Если не удалось - используем LLM
-    llm = get_llm(temperature=0.0, max_tokens=256)
-
+    llm = get_llm_for_classification()
+    # TODO: автоматическое составления промпта для классификации на основе реализованных Intent и INTENT_KEYWORDS
+    # TODO: посмотреть есть ли решение в langchain
     classification_prompt = f"""Ты - классификатор намерений пользователя для городского помощника Санкт-Петербурга.
 
 Категории:
@@ -232,7 +206,7 @@ def classify_intent_node(state: SupervisorState) -> dict:
 4. rag_search - вопросы о госуслугах, документах, процедурах оформления, льготах, справках
 5. conversation - приветствия, благодарности, общие вопросы о боте, прощания
 
-Запрос пользователя: "{state['query']}"
+Запрос пользователя: "{query}"
 
 Ответь ОДНИМ словом - название категории (mfc_search, pensioner_categories, pensioner_services, rag_search или conversation):"""
 
@@ -418,10 +392,10 @@ def rag_search_node(state: SupervisorState) -> dict:
     """
     Узел: Поиск по RAG (база знаний госуслуг).
     """
-    from app.agent.resilience import create_error_state_update
     from app.rag.graph import search_with_graph
 
-    query = state['query']
+    query = get_last_user_message(state)
+    rag_config = get_rag_config()
 
     logger.info('supervisor_node', node='rag_search', query=query[:100])
 
@@ -429,8 +403,8 @@ def rag_search_node(state: SupervisorState) -> dict:
         # Используем существующий RAG Graph (без toxicity check, т.к. уже проверили)
         documents, metadata = search_with_graph(
             query=query,
-            k=5,
-            min_relevant=2,
+            k=rag_config.search.k,
+            min_relevant=rag_config.search.min_relevant,
             use_toxicity_check=False,  # Уже проверили в supervisor
         )
 
@@ -439,10 +413,11 @@ def rag_search_node(state: SupervisorState) -> dict:
         else:
             # Форматируем результаты
             result_parts = ['Вот что я нашёл по вашему запросу:\n']
+            content_limit = rag_config.search.content_preview_limit
             for i, doc in enumerate(documents, 1):
                 title = doc.metadata.get('title', 'Документ')
                 url = doc.metadata.get('url', '')
-                content_preview = doc.page_content[:300] + '...' if len(doc.page_content) > 300 else doc.page_content
+                content_preview = doc.page_content[:content_limit] + '...' if len(doc.page_content) > content_limit else doc.page_content
 
                 result_parts.append(f'\n**{i}. {title}**')
                 if url:
@@ -463,25 +438,22 @@ def rag_search_node(state: SupervisorState) -> dict:
         }
 
     except Exception as e:
-        logger.error('rag_search_error', error=str(e), exc_info=True)
-        error_update = create_error_state_update(e, handler='rag')
-        error_update['metadata'] = {**state.get('metadata', {}), **error_update['metadata']}
-        return error_update
+        return create_error_response(e, 'Ошибка поиска. Попробуйте переформулировать запрос.')
 
 
 def conversation_node(state: SupervisorState) -> dict:
     """
     Узел: Обработка разговорных запросов.
     """
-    from app.agent.llm import get_llm
-    from app.agent.resilience import create_error_state_update
+    from app.agent.llm import get_llm_for_conversation
 
-    query = state['query']
-    chat_history = state.get('chat_history', [])
+    query = get_last_user_message(state)
+    chat_history = get_chat_history(state)
+    agent_config = get_agent_config()
 
     logger.info('supervisor_node', node='conversation', query=query[:100])
 
-    llm = get_llm(temperature=0.7, max_tokens=512)
+    llm = get_llm_for_conversation()
 
     # Формируем контекст с историей
     messages = []
@@ -493,8 +465,9 @@ def conversation_node(state: SupervisorState) -> dict:
 
     messages.append(HumanMessage(content=f'[SYSTEM] {system_message}'))
 
-    # Добавляем историю (последние 6 сообщений)
-    for msg in chat_history[-6:]:
+    # Добавляем историю (последние N сообщений из конфига)
+    context_size = agent_config.memory.context_window_size
+    for msg in chat_history[-context_size:]:
         if isinstance(msg, BaseMessage):
             messages.append(HumanMessage(content=f'[{msg.type.upper()}] {msg.content}'))
         else:
@@ -514,10 +487,7 @@ def conversation_node(state: SupervisorState) -> dict:
         }
 
     except Exception as e:
-        logger.error('conversation_error', error=str(e), exc_info=True)
-        error_update = create_error_state_update(e, handler='conversation')
-        error_update['metadata'] = {**state.get('metadata', {}), **error_update['metadata']}
-        return error_update
+        return create_error_response(e, 'Ошибка обработки. Попробуйте позже.')
 
 
 def generate_response_node(state: SupervisorState) -> dict:
@@ -526,21 +496,16 @@ def generate_response_node(state: SupervisorState) -> dict:
 
     Может использовать LLM для улучшения ответа или просто передать tool_result.
     """
-    tool_result = state.get('tool_result', '')
+    tool_result = state.get('tool_result') or ''
     intent = state.get('intent', '')
 
     logger.info('supervisor_node', node='generate_response', intent=intent)
 
-    # Для разговорных запросов - ответ уже готов
-    if intent == Intent.CONVERSATION.value:
-        return {'final_response': tool_result}
+    # Защита от None
+    if tool_result is None:
+        tool_result = 'Извините, не удалось обработать запрос.'
 
-    # Для API и RAG - можно добавить вежливое обрамление
-    # Пока просто возвращаем результат
-    return {
-        'final_response': tool_result,
-        'metadata': {**state.get('metadata', {}), 'response_generated': True},
-    }
+    return create_ai_response(tool_result)
 
 
 # =============================================================================
@@ -577,9 +542,8 @@ def intent_router(state: SupervisorState) -> str:
 
 def toxic_response_node(state: SupervisorState) -> dict:
     """Узел для ответа на токсичный запрос."""
-    return {
-        'final_response': state.get('toxicity_response', 'Извините, я не могу обработать этот запрос.'),
-    }
+    response = state.get('toxicity_response') or 'Извините, я не могу обработать этот запрос.'
+    return create_ai_response(response)
 
 
 # =============================================================================
@@ -706,7 +670,7 @@ def invoke_supervisor(
     Args:
         query: Запрос пользователя
         session_id: ID сессии (thread_id для checkpointer)
-        chat_history: История диалога (игнорируется при with_persistence=True)
+        chat_history: История диалога (добавляется в messages)
         with_persistence: Использовать персистентную память
 
     Returns:
@@ -714,18 +678,22 @@ def invoke_supervisor(
     """
     graph = get_supervisor_graph(with_persistence=with_persistence)
 
-    initial_state: SupervisorState = {
-        'query': query,
-        'session_id': session_id,
-        'chat_history': chat_history or [],
+    # Формируем messages: история + текущий запрос
+    messages: list[BaseMessage] = []
+    if chat_history:
+        messages.extend(chat_history)
+    messages.append(HumanMessage(content=query))
+
+    initial_state = {
+        'messages': messages,
         'is_toxic': False,
         'toxicity_response': None,
         'intent': '',
         'intent_confidence': 0.0,
-        'extracted_params': {},
         'tool_result': None,
         'final_response': None,
         'metadata': {},
+        'extracted_params': {},
     }
 
     logger.info(
@@ -736,18 +704,15 @@ def invoke_supervisor(
     )
 
     # Если с персистентностью — передаём thread_id в config
-    if with_persistence:
-        config = {'configurable': {'thread_id': session_id}}
-        result = graph.invoke(initial_state, config=config)
-    else:
-        result = graph.invoke(initial_state)
+    config = {'configurable': {'thread_id': session_id}} if with_persistence else {}
+    result = graph.invoke(initial_state, config=config)
 
-    response = result.get('final_response', 'Извините, не удалось обработать запрос.')
+    response = result.get('final_response') or 'Извините, не удалось обработать запрос.'
     metadata = result.get('metadata', {})
 
     logger.info(
         'supervisor_invoke_complete',
-        response_length=len(response),
+        response_length=len(response) if response else 0,
         intent=result.get('intent'),
         metadata=metadata,
     )

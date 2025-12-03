@@ -10,6 +10,7 @@
 
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import pickle
 from typing import Any
@@ -21,6 +22,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_gigachat import GigaChatEmbeddings
 
+from app.config import ensure_dotenv
 from app.logging_config import get_logger
 from app.rag.config import RAGConfig, get_rag_config
 from app.rag.models import ParsedDocument
@@ -144,13 +146,38 @@ class HybridIndexer:
     @property
     def embeddings(self) -> GigaChatEmbeddings:
         """
-        Ленивая инициализация embeddings
+        Ленивая инициализация embeddings.
+
+        Читает credentials и scope из переменных окружения:
+        - GIGACHAT_CREDENTIALS: ключ авторизации
+        - GIGACHAT_SCOPE: область доступа (GIGACHAT_API_PERS, GIGACHAT_API_CORP, etc.)
+        - EMBEDDINGS_MODEL: модель эмбеддингов (по умолчанию Embeddings)
         """
         if self._embeddings is None:
-            logger.info('embeddings_init', model='GigaChat Embeddings')
+            ensure_dotenv()
+
+            credentials = os.getenv('GIGACHAT_CREDENTIALS')
+            scope = os.getenv('GIGACHAT_SCOPE', 'GIGACHAT_API_PERS')
+            model = os.getenv('EMBEDDINGS_MODEL', 'Embeddings')
+
+            if not credentials:
+                raise ValueError(
+                    'GIGACHAT_CREDENTIALS not set. '
+                    'Please set it in .env file or environment variables.'
+                )
+
+            logger.info(
+                'embeddings_init',
+                model=model,
+                scope=scope,
+                credentials_length=len(credentials),
+            )
+
             self._embeddings = GigaChatEmbeddings(
-                model='Embeddings',  # модель для embeddings
-                verify_ssl_certs=False,  # для обхода проблем с сертификатами
+                credentials=credentials,
+                scope=scope,
+                model=model,
+                verify_ssl_certs=False,
             )
         return self._embeddings
 
@@ -204,17 +231,33 @@ class HybridIndexer:
         if force_reindex:
             self._clear_index()
 
-        # индексируем в ChromaDB
-        logger.info('chromadb_indexing', chunks_count=len(chunks))
-        self.vectorstore.add_documents(chunks)
+        # =================================================================
+        # ВАЖНО: Сначала сохраняем BM25 (не требует API), потом vector
+        # Это позволяет использовать BM25 даже если embeddings API недоступен
+        # =================================================================
 
-        # сохраняем документы для BM25
+        # 1. Сохраняем документы для BM25 (локально, без API)
         self._bm25_docs = chunks
         self._save_bm25_docs()
+        logger.info('bm25_indexed', chunks_count=len(chunks))
 
-        # создаём BM25 retriever
+        # 2. Создаём BM25 retriever
         self._bm25_retriever = BM25Retriever.from_documents(chunks)
-        self._bm25_retriever.k = self.config.index.search_k
+        self._bm25_retriever.k = self.config.search.k
+
+        # 3. Индексируем в ChromaDB (требует GigaChat API для embeddings)
+        vector_indexed = False
+        try:
+            logger.info('chromadb_indexing', chunks_count=len(chunks))
+            self.vectorstore.add_documents(chunks)
+            vector_indexed = True
+            logger.info('chromadb_indexed', chunks_count=len(chunks))
+        except Exception as e:
+            logger.error(
+                'chromadb_indexing_failed',
+                error=str(e),
+                message='Vector indexing failed, but BM25 is available',
+            )
 
         # обновляем метаданные
         now = datetime.now().isoformat()
@@ -224,6 +267,7 @@ class HybridIndexer:
                 'updated_at': now,
                 'document_count': len(docs),
                 'chunk_count': len(chunks),
+                'vector_indexed': vector_indexed,
             }
         )
         self._save_metadata()
@@ -238,51 +282,199 @@ class HybridIndexer:
         )
         return len(chunks)
 
-    def get_retriever(self, weights: tuple[float, float] = (0.5, 0.5)) -> EnsembleRetriever:
+    def ensure_indexed(self) -> bool:
         """
-        Возвращает гибридный retriever.
+        Проверяет наличие индекса и автоматически индексирует если нужно.
 
-        Args:
-            weights: Веса для (vector, bm25) retrievers
+        Логика:
+        1. Пытается загрузить bm25_docs.pkl
+        2. Если не найден — загружает all_documents.json и индексирует
+        3. Если all_documents.json тоже нет — возвращает False
 
         Returns:
-            EnsembleRetriever для поиска
+            True если индекс готов, False если документы не найдены
         """
-        if self._ensemble_retriever is not None:
-            return self._ensemble_retriever
+        # пытаемся загрузить существующий BM25 индекс
+        if not self._bm25_docs:
+            self._load_bm25_docs()
 
-        # загружаем BM25 документы если нужно
+        if self._bm25_docs:
+            logger.info(
+                'index_already_exists',
+                bm25_docs_count=len(self._bm25_docs),
+            )
+            return True
+
+        # BM25 индекс не найден — нужно проиндексировать
+        logger.warning(
+            'bm25_index_missing',
+            message='BM25 index not found, attempting to rebuild from documents',
+        )
+
+        # ищем all_documents.json
+        docs_path = self.config.index.parsed_docs_dir / 'all_documents.json'
+        if not docs_path.exists():
+            logger.error(
+                'documents_not_found',
+                path=str(docs_path),
+                message='Cannot rebuild index: all_documents.json not found. Run pipeline first.',
+            )
+            return False
+
+        # загружаем и индексируем
+        try:
+            docs = load_parsed_documents(docs_path)
+            if not docs:
+                logger.error('no_documents_to_index', message='all_documents.json is empty')
+                return False
+
+            logger.info(
+                'auto_indexing_start',
+                documents_count=len(docs),
+                message='Automatically indexing documents...',
+            )
+
+            chunk_count = self.index_documents(docs, force_reindex=True)
+
+            logger.info(
+                'auto_indexing_complete',
+                chunks_indexed=chunk_count,
+                documents_count=len(docs),
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                'auto_indexing_failed',
+                error=str(e),
+                message='Failed to automatically index documents',
+            )
+            return False
+
+    def reindex_vector(self) -> bool:
+        """
+        Переиндексирует только vector store (ChromaDB).
+
+        Используй когда BM25 уже есть, но vector индекс нужно пересоздать
+        (например, после восстановления доступа к embeddings API).
+
+        Returns:
+            True если успешно, False если ошибка
+        """
         if not self._bm25_docs:
             self._load_bm25_docs()
 
         if not self._bm25_docs:
-            raise ValueError('No documents indexed. Run index_documents() first.')
+            logger.error('reindex_vector_no_docs', message='No BM25 docs to reindex')
+            return False
 
-        # создаём retrievers
-        vector_retriever = self.vectorstore.as_retriever(
-            search_kwargs={'k': self.config.index.search_k}
-        )
+        try:
+            # очищаем старый vector store
+            if self._vectorstore is not None:
+                self._vectorstore.delete_collection()
+                self._vectorstore = None
 
+            # индексируем
+            logger.info('vector_reindex_start', chunks_count=len(self._bm25_docs))
+            self.vectorstore.add_documents(self._bm25_docs)
+
+            # обновляем метаданные
+            self._metadata['vector_indexed'] = True
+            self._metadata['updated_at'] = datetime.now().isoformat()
+            self._save_metadata()
+
+            # сбрасываем ensemble чтобы пересоздался
+            self._ensemble_retriever = None
+
+            logger.info('vector_reindex_complete', chunks_count=len(self._bm25_docs))
+            return True
+
+        except Exception as e:
+            logger.error('vector_reindex_failed', error=str(e))
+            return False
+
+    def get_retriever(
+        self,
+        weights: tuple[float, float] = (0.5, 0.5),
+        fallback_to_bm25: bool = True,
+    ) -> EnsembleRetriever | BM25Retriever:
+        """
+        Возвращает гибридный retriever (или BM25-only как fallback).
+
+        При отсутствии индекса автоматически пытается проиндексировать документы.
+        Если vector индекс недоступен, возвращает только BM25 retriever.
+
+        Args:
+            weights: Веса для (vector, bm25) retrievers
+            fallback_to_bm25: Если True, возвращает BM25 при ошибке vector
+
+        Returns:
+            EnsembleRetriever или BM25Retriever (fallback)
+
+        Raises:
+            ValueError: Если индекс отсутствует и не удалось его создать
+        """
+        if self._ensemble_retriever is not None:
+            return self._ensemble_retriever
+
+        # проверяем/создаём индекс автоматически
+        if not self._bm25_docs:
+            if not self.ensure_indexed():
+                raise ValueError(
+                    'No documents indexed and auto-indexing failed. '
+                    'Run `python -m app.rag.pipeline` to parse documents first, '
+                    'then `python -m app.rag.indexer` to index them.'
+                )
+
+        # создаём BM25 retriever (всегда работает локально)
         if self._bm25_retriever is None:
             self._bm25_retriever = BM25Retriever.from_documents(self._bm25_docs)
-            self._bm25_retriever.k = self.config.index.search_k
+            self._bm25_retriever.k = self.config.search.k
 
-        # создаём ensemble
-        self._ensemble_retriever = EnsembleRetriever(
-            retrievers=[vector_retriever, self._bm25_retriever],
-            weights=list(weights),
-        )
+        # проверяем метаданные — был ли успешно создан vector индекс?
+        metadata = self.load_metadata()
+        vector_available = metadata.get('vector_indexed', False)
 
-        logger.info(
-            'ensemble_retriever_created',
-            vector_weight=weights[0],
-            bm25_weight=weights[1],
-        )
-        return self._ensemble_retriever
+        if not vector_available:
+            logger.info(
+                'using_bm25_only',
+                message='Vector index not available, using BM25 only',
+            )
+            return self._bm25_retriever
+
+        # пытаемся создать vector retriever
+        try:
+            vector_retriever = self.vectorstore.as_retriever(
+                search_kwargs={'k': self.config.search.k}
+            )
+
+            # создаём ensemble
+            self._ensemble_retriever = EnsembleRetriever(
+                retrievers=[vector_retriever, self._bm25_retriever],
+                weights=list(weights),
+            )
+
+            logger.info(
+                'ensemble_retriever_created',
+                vector_weight=weights[0],
+                bm25_weight=weights[1],
+            )
+            return self._ensemble_retriever
+
+        except Exception as e:
+            if fallback_to_bm25:
+                logger.warning(
+                    'vector_retriever_failed_fallback_bm25',
+                    error=str(e),
+                    message='Using BM25-only retriever as fallback',
+                )
+                return self._bm25_retriever
+            else:
+                raise
 
     def search(self, query: str, k: int | None = None) -> list[Document]:
         """
-        Выполняет гибридный поиск.
+        Выполняет гибридный поиск с fallback на BM25.
 
         Args:
             query: Поисковый запрос
@@ -293,9 +485,29 @@ class HybridIndexer:
         """
         retriever = self.get_retriever()
 
-        # - EnsembleRetriever не поддерживает k напрямую
-        # - используем значение из конфига
-        results = retriever.invoke(query)
+        try:
+            # пытаемся использовать retriever (ensemble или bm25)
+            results = retriever.invoke(query)
+        except Exception as e:
+            # если ensemble упал (например, embeddings API недоступен) — fallback на BM25
+            logger.warning(
+                'search_fallback_bm25',
+                error=str(e)[:100],
+                message='Ensemble search failed, falling back to BM25',
+            )
+
+            # убеждаемся что BM25 retriever создан
+            if self._bm25_retriever is None:
+                if not self._bm25_docs:
+                    self._load_bm25_docs()
+                if self._bm25_docs:
+                    self._bm25_retriever = BM25Retriever.from_documents(self._bm25_docs)
+                    self._bm25_retriever.k = self.config.search.k
+
+            if self._bm25_retriever is None:
+                raise ValueError('No retriever available for search') from e
+
+            results = self._bm25_retriever.invoke(query)
 
         if k is not None:
             results = results[:k]

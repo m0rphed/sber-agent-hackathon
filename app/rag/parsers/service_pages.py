@@ -19,16 +19,16 @@
 3. Объединяем в структурированный документ
 """
 
-import logging
 import re
 from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 
+from app.logging_config import get_logger
 from app.rag.models import ParsedDocument, ParserResult, SourceType
 from app.rag.parsers.base import BaseParser
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ServicePageParser(BaseParser):
@@ -391,7 +391,7 @@ if __name__ == '__main__':
     # import json
     import sys
 
-    logging.basicConfig(level=logging.INFO)
+    # Логгинг уже настроен через app.logging_config
 
     # Тестовые URL
     test_urls = [

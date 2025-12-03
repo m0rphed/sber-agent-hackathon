@@ -25,13 +25,22 @@ Hybrid Agent Graph - Вариант 3: Agent внутри Graph.
 """
 
 from enum import Enum
-from typing import TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import create_react_agent
 
+from app.agent.state import (
+    AgentState,
+    create_ai_response,
+    create_error_response,
+    get_chat_history,
+    get_default_state_values,
+    get_last_user_message,
+)
+from app.config import get_agent_config
 from app.logging_config import get_logger
+from app.rag.config import get_rag_config
 
 logger = get_logger(__name__)
 
@@ -104,28 +113,16 @@ HYBRID_INTENT_KEYWORDS = {
 # =============================================================================
 
 
-class HybridState(TypedDict):
-    """Состояние гибридного графа."""
+class HybridState(AgentState):
+    """
+    Состояние Hybrid графа.
 
-    # Входные данные
-    query: str
-    session_id: str
-    chat_history: list[BaseMessage]
+    Наследует от AgentState (MessagesState + общие поля).
+    Добавляет специфичные для Hybrid агента поля.
+    """
 
-    # Toxicity
-    is_toxic: bool
-    toxicity_response: str | None
-
-    # Intent
-    intent: str
-    intent_confidence: float
-
-    # Результаты
-    tool_result: str | None
-    final_response: str | None
-
-    # Метаданные
-    metadata: dict
+    # Hybrid-specific: параметры из запроса
+    extracted_params: dict  # Извлечённые параметры (адрес, район и т.д.)
 
 
 # =============================================================================
@@ -137,7 +134,8 @@ def check_toxicity_node(state: HybridState) -> dict:
     """Узел 1: Проверка токсичности."""
     from app.services.toxicity import get_toxicity_filter
 
-    query = state['query']
+    query = get_last_user_message(state)
+
     logger.info('hybrid_node', node='check_toxicity', query_length=len(query))
 
     toxicity_filter = get_toxicity_filter()
@@ -161,7 +159,7 @@ def check_toxicity_node(state: HybridState) -> dict:
 
 def classify_intent_node(state: HybridState) -> dict:
     """Узел 2: Классификация намерения (упрощённая для гибрида)."""
-    query = state['query'].lower()
+    query = get_last_user_message(state).lower()
 
     logger.info('hybrid_node', node='classify_intent', query=query[:100])
 
@@ -192,17 +190,17 @@ def tool_agent_node(state: HybridState) -> dict:
     Использует полноценный ReAct агент из langgraph.prebuilt для обработки
     запросов, требующих вызова API (МФЦ, пенсионеры и т.д.)
     """
-    from app.agent.llm import get_llm
-    from app.agent.resilience import create_error_state_update
+    from app.agent.llm import get_llm_for_tools
     from app.tools.city_tools import ALL_TOOLS as API_TOOLS
 
-    query = state['query']
-    chat_history = state.get('chat_history', [])
+    agent_config = get_agent_config()
+    query = get_last_user_message(state)
+    chat_history = get_chat_history(state, max_messages=agent_config.memory.context_window_size)
 
     logger.info('hybrid_node', node='tool_agent', query=query[:100])
 
     try:
-        llm = get_llm(temperature=0.3)
+        llm = get_llm_for_tools()
 
         # Используем create_react_agent из langgraph.prebuilt
         # Это создаёт готовый граф с ReAct логикой
@@ -216,15 +214,17 @@ def tool_agent_node(state: HybridState) -> dict:
         )
 
         # Формируем сообщения для агента
+        # Количество сообщений из истории: context_window_size - 2 (для системного и текущего)
+        history_limit = max(1, agent_config.memory.context_window_size - 2)
         messages = []
-        for msg in chat_history[-4:]:  # Последние 4 сообщения
+        for msg in chat_history[-history_limit:]:
             messages.append(msg)
         messages.append(HumanMessage(content=query))
 
-        # Вызываем агента с ограничением рекурсии
+        # Вызываем агента с ограничением рекурсии из конфига
         result = react_agent.invoke(
             {'messages': messages},
-            config={'recursion_limit': 5},
+            config={'recursion_limit': agent_config.memory.recursion_limit},
         )
 
         # Извлекаем последний AI ответ
@@ -254,26 +254,23 @@ def tool_agent_node(state: HybridState) -> dict:
         }
 
     except Exception as e:
-        logger.error('tool_agent_error', error=str(e), exc_info=True)
-        error_update = create_error_state_update(e, handler='tool_agent')
-        error_update['metadata'] = {**state.get('metadata', {}), **error_update['metadata']}
-        return error_update
+        return create_error_response(e, 'Ошибка API. Попробуйте позже.')
 
 
 def rag_search_node(state: HybridState) -> dict:
     """Узел: RAG поиск (использует существующий RAG Graph)."""
-    from app.agent.resilience import create_error_state_update
     from app.rag.graph import search_with_graph
 
-    query = state['query']
+    rag_config = get_rag_config()
+    query = get_last_user_message(state)
 
     logger.info('hybrid_node', node='rag_search', query=query[:100])
 
     try:
         documents, metadata = search_with_graph(
             query=query,
-            k=5,
-            min_relevant=2,
+            k=rag_config.search.k,
+            min_relevant=rag_config.search.min_relevant,
             use_toxicity_check=False,  # Уже проверили
         )
 
@@ -281,10 +278,11 @@ def rag_search_node(state: HybridState) -> dict:
             result = 'К сожалению, не удалось найти информацию по вашему запросу.'
         else:
             result_parts = ['Вот что я нашёл:\n']
+            content_preview_limit = rag_config.search.content_preview_limit
             for i, doc in enumerate(documents, 1):
                 title = doc.metadata.get('title', 'Документ')
                 url = doc.metadata.get('url', '')
-                preview = doc.page_content[:300] + '...' if len(doc.page_content) > 300 else doc.page_content
+                preview = doc.page_content[:content_preview_limit] + '...' if len(doc.page_content) > content_preview_limit else doc.page_content
                 result_parts.append(f'\n**{i}. {title}**')
                 if url:
                     result_parts.append(f'\nИсточник: {url}')
@@ -303,23 +301,20 @@ def rag_search_node(state: HybridState) -> dict:
         }
 
     except Exception as e:
-        logger.error('rag_search_error', error=str(e), exc_info=True)
-        error_update = create_error_state_update(e, handler='rag')
-        error_update['metadata'] = {**state.get('metadata', {}), **error_update['metadata']}
-        return error_update
+        return create_error_response(e, 'Ошибка поиска. Попробуйте переформулировать запрос.')
 
 
 def conversation_node(state: HybridState) -> dict:
     """Узел: Разговорный ответ."""
-    from app.agent.llm import get_llm
-    from app.agent.resilience import create_error_state_update
+    from app.agent.llm import get_llm_for_conversation
 
-    query = state['query']
-    chat_history = state.get('chat_history', [])
+    agent_config = get_agent_config()
+    query = get_last_user_message(state)
+    chat_history = get_chat_history(state, max_messages=agent_config.memory.context_window_size)
 
     logger.info('hybrid_node', node='conversation', query=query[:100])
 
-    llm = get_llm(temperature=0.7, max_tokens=512)
+    llm = get_llm_for_conversation()
 
     messages = [
         HumanMessage(content="""[SYSTEM] Ты — дружелюбный городской помощник Санкт-Петербурга.
@@ -327,7 +322,8 @@ def conversation_node(state: HybridState) -> dict:
 Отвечай кратко и вежливо.""")
     ]
 
-    for msg in chat_history[-6:]:
+    # Добавляем историю
+    for msg in chat_history:
         if isinstance(msg, BaseMessage):
             messages.append(HumanMessage(content=f'[{msg.type.upper()}] {msg.content}'))
 
@@ -345,29 +341,25 @@ def conversation_node(state: HybridState) -> dict:
         }
 
     except Exception as e:
-        logger.error('conversation_error', error=str(e), exc_info=True)
-        error_update = create_error_state_update(e, handler='conversation')
-        error_update['metadata'] = {**state.get('metadata', {}), **error_update['metadata']}
-        return error_update
+        return create_error_response(e, 'Ошибка обработки. Попробуйте позже.')
 
 
 def generate_response_node(state: HybridState) -> dict:
     """Узел: Финальная генерация ответа."""
-    tool_result = state.get('tool_result', '')
+    tool_result = state.get('tool_result') or state.get('final_response') or ''
+    # Защита от None
+    if tool_result is None:
+        tool_result = 'Извините, не удалось обработать запрос.'
 
-    logger.info('hybrid_node', node='generate_response')
+    logger.info('hybrid_node', node='generate_response', result_length=len(tool_result))
 
-    return {
-        'final_response': tool_result,
-        'metadata': {**state.get('metadata', {}), 'response_generated': True},
-    }
+    return create_ai_response(tool_result)
 
 
 def toxic_response_node(state: HybridState) -> dict:
     """Узел для ответа на токсичный запрос."""
-    return {
-        'final_response': state.get('toxicity_response', 'Извините, я не могу обработать этот запрос.'),
-    }
+    response = state.get('toxicity_response') or 'Извините, я не могу обработать этот запрос.'
+    return create_ai_response(response)
 
 
 # =============================================================================
@@ -431,7 +423,7 @@ def create_hybrid_graph(checkpointer=None):
     builder.add_node('conversation', conversation_node, retry_policy=llm_retry)  # LLM
     builder.add_node('generate_response', generate_response_node)  # Без retry
 
-    # Рёбра
+    # Рёбра — начинаем сразу с check_toxicity
     builder.add_edge(START, 'check_toxicity')
 
     builder.add_conditional_edges(
@@ -510,7 +502,7 @@ def invoke_hybrid(
     Args:
         query: Запрос пользователя
         session_id: ID сессии (thread_id для checkpointer)
-        chat_history: История диалога (игнорируется при with_persistence=True)
+        chat_history: История диалога (добавляется в messages)
         with_persistence: Использовать персистентную память
 
     Returns:
@@ -518,10 +510,15 @@ def invoke_hybrid(
     """
     graph = get_hybrid_graph(with_persistence=with_persistence)
 
-    initial_state: HybridState = {
-        'query': query,
-        'session_id': session_id,
-        'chat_history': chat_history or [],
+    # Формируем messages: история + текущий запрос
+    messages: list[BaseMessage] = []
+    if chat_history:
+        messages.extend(chat_history)
+    messages.append(HumanMessage(content=query))
+
+    # Initial state с default values
+    initial_state = {
+        'messages': messages,
         'is_toxic': False,
         'toxicity_response': None,
         'intent': '',
@@ -529,6 +526,7 @@ def invoke_hybrid(
         'tool_result': None,
         'final_response': None,
         'metadata': {},
+        'extracted_params': {},
     }
 
     logger.info(
@@ -539,11 +537,8 @@ def invoke_hybrid(
     )
 
     # Если с персистентностью — передаём thread_id в config
-    if with_persistence:
-        config = {'configurable': {'thread_id': session_id}}
-        result = graph.invoke(initial_state, config=config)
-    else:
-        result = graph.invoke(initial_state)
+    config = {'configurable': {'thread_id': session_id}} if with_persistence else {}
+    result = graph.invoke(initial_state, config=config)
 
     response = result.get('final_response', 'Извините, не удалось обработать запрос.')
     metadata = result.get('metadata', {})

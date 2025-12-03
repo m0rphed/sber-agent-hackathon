@@ -2,10 +2,17 @@
 Примитивный фильтр токсичности для городского помощника.
 
 Обеспечивает фильтрацию токсичных сообщений пользователей.
+
+Поддерживает два бэкенда:
+- regex (по умолчанию): быстрый, без зависимостей
+- ml: точный, использует rubert-tiny-toxicity модель
+
+Выбор бэкенда через переменную окружения TOXICITY_BACKEND=regex|ml
 """
 
 from dataclasses import dataclass
 from enum import StrEnum
+import os
 import re
 
 
@@ -216,15 +223,66 @@ class ToxicityFilter:
         return priorities.get(level, 0)
 
 
+# === Выбор бэкенда ===
+
+class ToxicityBackend(StrEnum):
+    """Доступные бэкенды для фильтрации токсичности."""
+    REGEX = 'regex'  # Быстрый, на основе паттернов
+    ML = 'ml'        # Точный, на основе ML-модели
+
+
 # глобальный экземпляр фильтра (singleton)
 _filter_instance: ToxicityFilter | None = None
+_current_backend: ToxicityBackend | None = None
 
 
-def get_toxicity_filter() -> ToxicityFilter:
+def get_toxicity_filter(backend: ToxicityBackend | str | None = None) -> ToxicityFilter:
     """
-    Возвращает глобальный экземпляр фильтра токсичности
+    Возвращает глобальный экземпляр фильтра токсичности.
+    
+    Args:
+        backend: Какой бэкенд использовать:
+            - 'regex': быстрый regex-based фильтр
+            - 'ml': ML-модель rubert-tiny-toxicity
+            - None: берётся из TOXICITY_BACKEND env var, default='regex'
+    
+    Returns:
+        ToxicityFilter или ToxicityFilterML в зависимости от бэкенда
     """
-    global _filter_instance
-    if _filter_instance is None:
-        _filter_instance = ToxicityFilter()
+    global _filter_instance, _current_backend
+    
+    # Определяем бэкенд
+    if backend is None:
+        backend_str = os.environ.get('TOXICITY_BACKEND', 'regex').lower()
+        try:
+            backend = ToxicityBackend(backend_str)
+        except ValueError:
+            backend = ToxicityBackend.REGEX
+    elif isinstance(backend, str):
+        try:
+            backend = ToxicityBackend(backend.lower())
+        except ValueError:
+            backend = ToxicityBackend.REGEX
+    
+    # Если бэкенд изменился, пересоздаём экземпляр
+    if _filter_instance is None or _current_backend != backend:
+        _current_backend = backend
+        
+        if backend == ToxicityBackend.ML:
+            # Lazy import для ML-версии (тяжёлые зависимости)
+            from app.services.toxicity_advanced import ToxicityFilterML
+            _filter_instance = ToxicityFilterML()
+        else:
+            _filter_instance = ToxicityFilter()
+    
     return _filter_instance
+
+
+def get_toxicity_filter_regex() -> ToxicityFilter:
+    """Явно получить regex-based фильтр."""
+    return get_toxicity_filter(ToxicityBackend.REGEX)
+
+
+def get_toxicity_filter_ml() -> ToxicityFilter:
+    """Явно получить ML-based фильтр."""
+    return get_toxicity_filter(ToxicityBackend.ML)

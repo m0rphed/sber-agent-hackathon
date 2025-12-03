@@ -5,7 +5,6 @@
 """
 
 from abc import ABC, abstractmethod
-import logging
 import time
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -13,9 +12,10 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import requests
 
+from app.logging_config import get_logger
 from app.rag.models import ParsedDocument, ParserResult, SourceType
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BaseParser(ABC):

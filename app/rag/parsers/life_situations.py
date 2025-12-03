@@ -15,17 +15,17 @@
 4. Сохраняем иерархию через parent_id
 """
 
-import logging
 import re
 from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 from bs4.element import AttributeValueList
 
+from app.logging_config import get_logger
 from app.rag.models import ParsedDocument, ParserResult, SourceType
 from app.rag.parsers.base import BaseParser
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LifeSituationsParser(BaseParser):
@@ -514,8 +514,7 @@ class LifeSituationsParser(BaseParser):
 # CLI для тестирования
 if __name__ == '__main__':
     # import json
-
-    logging.basicConfig(level=logging.INFO)
+    # Логгинг уже настроен через app.logging_config
 
     parser = LifeSituationsParser(delay=1.0)
 

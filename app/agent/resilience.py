@@ -25,21 +25,22 @@ from typing import Any
 
 from langgraph.types import RetryPolicy
 
+from app.config import AgentConfig, get_agent_config
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
 # =============================================================================
-# Константы
+# Константы (legacy - используйте get_agent_config())
 # =============================================================================
 
-# Таймауты (в секундах)
-DEFAULT_LLM_TIMEOUT: float = 30.0  # Таймаут для LLM вызовов
-DEFAULT_API_TIMEOUT: float = 15.0  # Таймаут для внешних API
-DEFAULT_EMBEDDING_TIMEOUT: float = 20.0  # Таймаут для embeddings
+# Таймауты (в секундах) - для обратной совместимости
+DEFAULT_LLM_TIMEOUT: float = 30.0
+DEFAULT_API_TIMEOUT: float = 15.0
+DEFAULT_EMBEDDING_TIMEOUT: float = 20.0
 
-# Retry параметры
+# Retry параметры - для обратной совместимости
 DEFAULT_MAX_ATTEMPTS: int = 3
 DEFAULT_INITIAL_INTERVAL: float = 1.0
 DEFAULT_BACKOFF_FACTOR: float = 2.0
@@ -245,53 +246,66 @@ def should_retry_exception(exc: Exception) -> bool:
     return False
 
 
-def get_default_retry_policy() -> RetryPolicy:
+def get_default_retry_policy(config: AgentConfig | None = None) -> RetryPolicy:
     """
     Стандартная retry policy для узлов графа.
+
+    Args:
+        config: Конфигурация агента (None = глобальный)
 
     Returns:
         RetryPolicy с настройками по умолчанию
     """
+    cfg = config or get_agent_config()
     return RetryPolicy(
-        max_attempts=DEFAULT_MAX_ATTEMPTS,
-        initial_interval=DEFAULT_INITIAL_INTERVAL,
-        backoff_factor=DEFAULT_BACKOFF_FACTOR,
-        max_interval=DEFAULT_MAX_INTERVAL,
-        jitter=DEFAULT_JITTER,
+        max_attempts=cfg.retry.max_attempts,
+        initial_interval=cfg.retry.initial_interval,
+        backoff_factor=cfg.retry.multiplier,
+        max_interval=cfg.retry.max_interval,
+        jitter=cfg.retry.jitter,
         retry_on=should_retry_exception,
     )
 
 
-def get_llm_retry_policy() -> RetryPolicy:
+def get_llm_retry_policy(config: AgentConfig | None = None) -> RetryPolicy:
     """
     Retry policy для LLM вызовов (более агрессивная).
+
+    Args:
+        config: Конфигурация агента (None = глобальный)
 
     Returns:
         RetryPolicy для LLM
     """
+    cfg = config or get_agent_config()
     return RetryPolicy(
-        max_attempts=3,
-        initial_interval=1.0,
-        backoff_factor=2.0,
-        max_interval=8.0,
-        jitter=True,
+        max_attempts=cfg.retry.max_attempts,
+        initial_interval=cfg.retry.initial_interval,
+        backoff_factor=cfg.retry.multiplier,
+        max_interval=cfg.retry.max_interval,
+        jitter=cfg.retry.jitter,
         retry_on=should_retry_exception,
     )
 
 
-def get_api_retry_policy() -> RetryPolicy:
+def get_api_retry_policy(config: AgentConfig | None = None) -> RetryPolicy:
     """
     Retry policy для внешних API.
+
+    Args:
+        config: Конфигурация агента (None = глобальный)
 
     Returns:
         RetryPolicy для API
     """
+    cfg = config or get_agent_config()
+    # Для API меньше попыток и меньше интервал
     return RetryPolicy(
-        max_attempts=2,
-        initial_interval=0.5,
-        backoff_factor=2.0,
-        max_interval=5.0,
-        jitter=True,
+        max_attempts=max(1, cfg.retry.max_attempts - 1),
+        initial_interval=cfg.retry.initial_interval * 0.5,
+        backoff_factor=cfg.retry.multiplier,
+        max_interval=cfg.retry.max_interval * 0.5,
+        jitter=cfg.retry.jitter,
         retry_on=should_retry_exception,
     )
 
@@ -349,17 +363,19 @@ def create_error_state_update(
 
 
 def get_llm_with_timeout(
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
-    timeout: float = DEFAULT_LLM_TIMEOUT,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+    config: AgentConfig | None = None,
 ):
     """
     Создаёт GigaChat LLM с настроенным timeout.
 
     Args:
-        temperature: Температура генерации
-        max_tokens: Максимум токенов
-        timeout: Таймаут в секундах
+        temperature: Температура генерации (None = из конфига)
+        max_tokens: Максимум токенов (None = из конфига)
+        timeout: Таймаут в секундах (None = из конфига)
+        config: Конфигурация агента (None = глобальный)
 
     Returns:
         GigaChat instance с timeout
@@ -372,13 +388,19 @@ def get_llm_with_timeout(
         GIGACHAT_VERIFY_SSL_CERTS,
     )
 
+    cfg = config or get_agent_config()
+
+    effective_temp = temperature if temperature is not None else cfg.llm.temperature_conversation
+    effective_max_tokens = max_tokens if max_tokens is not None else cfg.llm.max_tokens_default
+    effective_timeout = timeout if timeout is not None else float(cfg.timeout.llm_seconds)
+
     return GigaChat(
         credentials=GIGACHAT_CREDENTIALS,
         scope=GIGACHAT_SCOPE,
         verify_ssl_certs=GIGACHAT_VERIFY_SSL_CERTS,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout,
+        temperature=effective_temp,
+        max_tokens=effective_max_tokens,
+        timeout=effective_timeout,
     )
 
 

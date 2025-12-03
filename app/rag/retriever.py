@@ -12,12 +12,18 @@
     docs = retriever.search("запрос", k=5)
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from langchain_core.documents import Document
 
 from app.logging_config import get_logger
+from app.rag.config import RAGConfig, get_rag_config
+
+if TYPE_CHECKING:
+    from app.rag.indexer import HybridIndexer
 
 logger = get_logger(__name__)
 
@@ -98,7 +104,12 @@ class HybridRetriever(BaseRetriever):
     - Готовностью к использованию в singleton
     """
 
-    def __init__(self):
+    _indexer: HybridIndexer | None
+    _config: RAGConfig
+    _initialized: bool
+
+    def __init__(self, config: RAGConfig | None = None):
+        self._config = config or get_rag_config()
         self._indexer = None
         self._initialized = False
 
@@ -116,7 +127,7 @@ class HybridRetriever(BaseRetriever):
 
         logger.info('hybrid_retriever_init_start')
 
-        self._indexer = HybridIndexer()
+        self._indexer = HybridIndexer(config=self._config)
         self._indexer._load_bm25_docs()
 
         self._initialized = True
@@ -136,7 +147,7 @@ class HybridRetriever(BaseRetriever):
 
         Args:
             query: Поисковый запрос
-            k: Количество результатов
+            k: Количество результатов (None = из конфига)
 
         Returns:
             Список документов
@@ -145,7 +156,8 @@ class HybridRetriever(BaseRetriever):
         if not self._initialized:
             self.initialize()
 
-        return self._indexer.search(query, k=k)
+        effective_k = k if k is not None else self._config.search.k
+        return self._indexer.search(query, k=effective_k)
 
     @property
     def indexer(self):
@@ -203,6 +215,7 @@ _retriever_cache: dict[str, BaseRetriever] = {}
 def get_retriever(
     retriever_type: str = 'hybrid',
     force_new: bool = False,
+    config: RAGConfig | None = None,
 ) -> BaseRetriever:
     """
     Возвращает singleton retriever.
@@ -210,6 +223,7 @@ def get_retriever(
     Args:
         retriever_type: Тип retriever'а ('hybrid' или 'opensearch')
         force_new: Создать новый экземпляр (для тестов)
+        config: Конфигурация RAG (None = глобальный)
 
     Returns:
         Инициализированный retriever
@@ -221,7 +235,7 @@ def get_retriever(
 
     if force_new or retriever_type not in _retriever_cache:
         if retriever_type == 'hybrid':
-            retriever = HybridRetriever()
+            retriever = HybridRetriever(config=config)
         elif retriever_type == 'opensearch':
             retriever = OpenSearchRetriever()
         else:
@@ -261,7 +275,12 @@ def clear_retriever_cache() -> None:
 # =============================================================================
 
 
-def search(query: str, k: int = 5, retriever_type: str = 'hybrid') -> list[Document]:
+def search(
+    query: str,
+    k: int | None = None,
+    retriever_type: str = 'hybrid',
+    config: RAGConfig | None = None,
+) -> list[Document]:
     """
     Быстрый поиск через singleton retriever.
 
@@ -269,11 +288,14 @@ def search(query: str, k: int = 5, retriever_type: str = 'hybrid') -> list[Docum
 
     Args:
         query: Поисковый запрос
-        k: Количество результатов
+        k: Количество результатов (None = из конфига)
         retriever_type: Тип retriever'а
+        config: Конфигурация RAG
 
     Returns:
         Список документов
     """
-    retriever = get_retriever(retriever_type)
-    return retriever.search(query, k=k)
+    cfg = config or get_rag_config()
+    effective_k = k if k is not None else cfg.search.k
+    retriever = get_retriever(retriever_type, config=config)
+    return retriever.search(query, k=effective_k)

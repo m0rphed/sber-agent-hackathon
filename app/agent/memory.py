@@ -7,10 +7,14 @@
 - Очистка старых сессий
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+
+from app.config import AgentConfig, get_agent_config
 
 
 @dataclass
@@ -69,16 +73,24 @@ class ConversationMemory:
 
     def __init__(
         self,
-        max_messages_per_session: int = 20,
+        max_messages_per_session: int | None = None,
         session_ttl_hours: int = 24,
+        config: AgentConfig | None = None,
     ):
         """
         Args:
-            max_messages_per_session: Максимум сообщений на сессию
+            max_messages_per_session: Максимум сообщений на сессию (None = из конфига)
             session_ttl_hours: Время жизни сессии в часах
+            config: Конфигурация агента (None = глобальный)
         """
+        self._config = config or get_agent_config()
         self._sessions: dict[str, ConversationSession] = {}
-        self.max_messages = max_messages_per_session
+
+        if max_messages_per_session is not None:
+            self.max_messages = max_messages_per_session
+        else:
+            self.max_messages = self._config.memory.max_messages_per_session
+
         self.session_ttl = timedelta(hours=session_ttl_hours)
 
     def get_or_create_session(self, session_id: str) -> ConversationSession:

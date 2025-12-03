@@ -83,9 +83,12 @@ class TestConversationMemory:
         """
         Тест создания менеджера памяти
         """
-        memory = ConversationMemory()
+        from app.config import get_agent_config
 
-        assert memory.max_messages == 20
+        memory = ConversationMemory()
+        expected_max = get_agent_config().memory.max_messages_per_session
+
+        assert memory.max_messages == expected_max
         assert memory.active_sessions_count == 0
 
     def test_get_or_create_session(self):

@@ -1,43 +1,90 @@
 """
-Настройка LLM (GigaChat) через LangChain
+Настройка LLM (GigaChat) через LangChain.
+
+Использует централизованную конфигурацию из app.config.
 """
+
+from __future__ import annotations
 
 from langchain_gigachat import GigaChat
 
-from app.agent.resilience import DEFAULT_LLM_TIMEOUT
 from app.config import (
     GIGACHAT_CREDENTIALS,
     GIGACHAT_SCOPE,
     GIGACHAT_VERIFY_SSL_CERTS,
+    AgentConfig,
+    get_agent_config,
 )
 
 
 def get_llm(
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
     timeout: float | None = None,
+    config: AgentConfig | None = None,
 ) -> GigaChat:
     """
     Создаёт экземпляр GigaChat LLM.
 
     Args:
-        temperature: Температура генерации (0.0 - 1.0)
-        max_tokens: Максимальное количество токенов в ответе
-        timeout: Таймаут в секундах (по умолчанию DEFAULT_LLM_TIMEOUT)
+        temperature: Температура генерации (None = из конфига)
+        max_tokens: Максимальное количество токенов (None = из конфига)
+        timeout: Таймаут в секундах (None = из конфига)
+        config: Конфигурация агента (None = глобальный)
 
     Returns:
         Настроенный экземпляр GigaChat
     """
-    if timeout is None:
-        timeout = DEFAULT_LLM_TIMEOUT
+    cfg = config or get_agent_config()
+
+    effective_temp = temperature if temperature is not None else cfg.llm.temperature_conversation
+    effective_max_tokens = max_tokens if max_tokens is not None else cfg.llm.max_tokens_default
+    effective_timeout = timeout if timeout is not None else float(cfg.timeout.llm_seconds)
 
     return GigaChat(
         credentials=GIGACHAT_CREDENTIALS,
         scope=GIGACHAT_SCOPE,
         verify_ssl_certs=GIGACHAT_VERIFY_SSL_CERTS,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout,
+        model=cfg.llm.model,
+        temperature=effective_temp,
+        max_tokens=effective_max_tokens,
+        timeout=effective_timeout,
+    )
+
+
+def get_llm_for_classification(config: AgentConfig | None = None) -> GigaChat:
+    """
+    LLM для классификации (детерминированный, низкая temperature).
+    """
+    cfg = config or get_agent_config()
+    return get_llm(
+        temperature=cfg.llm.temperature_classification,
+        max_tokens=cfg.llm.max_tokens_classification,
+        config=cfg,
+    )
+
+
+def get_llm_for_tools(config: AgentConfig | None = None) -> GigaChat:
+    """
+    LLM для работы с инструментами.
+    """
+    cfg = config or get_agent_config()
+    return get_llm(
+        temperature=cfg.llm.temperature_tools,
+        max_tokens=cfg.llm.max_tokens_default,
+        config=cfg,
+    )
+
+
+def get_llm_for_conversation(config: AgentConfig | None = None) -> GigaChat:
+    """
+    LLM для разговора.
+    """
+    cfg = config or get_agent_config()
+    return get_llm(
+        temperature=cfg.llm.temperature_conversation,
+        max_tokens=cfg.llm.max_tokens_conversation,
+        config=cfg,
     )
 
 

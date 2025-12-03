@@ -19,15 +19,15 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
 import re
 from typing import Any
 
+from app.logging_config import get_logger
 from app.rag.models import ParsedDocument, ParserResult  # , SourceType
 from app.rag.parsers.life_situations import LifeSituationsParser
 from app.rag.parsers.service_pages import ServicePageParser
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -367,10 +367,7 @@ if __name__ == '__main__':
     import argparse
     import json
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-    )
+    # Логгинг уже настроен через app.logging_config
 
     parser = argparse.ArgumentParser(description='Запуск пайплайна парсинга')
     parser.add_argument(

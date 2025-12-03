@@ -248,7 +248,7 @@ def _invoke_legacy(
 # Benchmark utilities
 # =============================================================================
 
-
+# TODO: перенести в тестирование
 def benchmark_agents(
     queries: list[str],
     agent_types: list[AgentType] | None = None,

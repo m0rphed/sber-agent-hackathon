@@ -17,18 +17,14 @@ TODO: для production рекомендуется использовать:
 import argparse
 from datetime import datetime
 import json
-import logging
 from pathlib import Path
 
+from app.logging_config import get_logger
 from app.rag.config import get_rag_config
 from app.rag.models import ParserResult, SourceType
 from app.rag.parsers import LifeSituationsParser
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def parse_source(source: str, incremental: bool = False) -> ParserResult:

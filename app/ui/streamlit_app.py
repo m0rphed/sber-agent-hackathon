@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # print(f'Добавление в sys.path: {Path(__file__).parent.parent}')
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.agent.city_agent import create_city_agent, safe_chat  # noqa: E402
+from app.agent.supervisor import get_supervisor_graph, invoke_supervisor  # noqa: E402
 from app.agent.persistent_memory import (  # noqa: E402
     clear_chat_history,
     get_chat_history,
@@ -214,11 +214,11 @@ def init_session_state() -> None:
     chat_id = st.session_state.get('current_chat_id', 'default')
     st.session_state.session_id = f'{user_id}_{chat_id}'
 
-    # инициализируем агента сразу если ещё не создан
+    # инициализируем Supervisor Graph сразу если ещё не создан
     if st.session_state.agent is None:
         try:
             # используем persistence=True для сохранения истории в SQLite
-            st.session_state.agent = create_city_agent(with_persistence=True)
+            st.session_state.agent = get_supervisor_graph(with_persistence=True)
         except Exception as e:
             st.error(f'Ошибка инициализации агента: {e}')
 
@@ -330,13 +330,13 @@ def _switch_chat(chat_id: str) -> None:
 
 def get_agent() -> CompiledStateGraph | None:
     """
-    Возвращает или создаёт экземпляр агента
+    Возвращает или создаёт экземпляр Supervisor Graph
     """
     if st.session_state.agent is None:
         with st.spinner('🔄 Инициализация агента...'):
             try:
                 # используем persistence=True для сохранения истории в SQLite
-                st.session_state.agent = create_city_agent(with_persistence=True)
+                st.session_state.agent = get_supervisor_graph(with_persistence=True)
             except Exception as e:
                 st.error(f'Ошибка инициализации агента: {e}')
                 return None
@@ -480,7 +480,12 @@ def render_chat_messages():
 
 def process_user_input(user_input: str) -> str:
     """
-    Обрабатывает ввод пользователя и возвращает ответ
+    Обрабатывает ввод пользователя и возвращает ответ через Supervisor Graph.
+
+    Supervisor автоматически:
+    - Проверяет токсичность
+    - Классифицирует intent
+    - Маршрутизирует на нужный обработчик (API/RAG/Conversation)
 
     Args:
         user_input: Сообщение пользователя
@@ -488,18 +493,24 @@ def process_user_input(user_input: str) -> str:
     Returns:
         Ответ агента
     """
+    # Проверяем что граф инициализирован
     agent = get_agent()
-
     if agent is None:
         return '❌ Агент не инициализирован. Проверьте настройки.'
 
     try:
-        response = safe_chat(
-            agent=agent,
-            user_message=user_input,
+        # Вызываем Supervisor Graph напрямую через invoke_supervisor
+        response, metadata = invoke_supervisor(
+            query=user_input,
             session_id=st.session_state.session_id,
-            use_persistence=True,  # используем SqliteSaver для персистентной памяти
+            with_persistence=True,  # используем SqliteSaver для персистентной памяти
         )
+
+        # Логируем метаданные для отладки (можно убрать позже)
+        if metadata.get('toxicity_blocked'):
+            # Сообщение было заблокировано фильтром токсичности
+            pass  # response уже содержит правильный ответ
+
         return response
     except Exception as e:
         return f'❌ Ошибка при обработке запроса: {e}'

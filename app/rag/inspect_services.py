@@ -7,17 +7,13 @@
 import argparse
 from datetime import datetime
 import json
-import logging
 from pathlib import Path
 
+from app.logging_config import get_logger
 from app.rag.parsers.life_situations import LifeSituationsParser
 from app.rag.parsers.service_pages import ServicePageParser
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def extract_service_urls_from_content(content: str) -> list[str]:

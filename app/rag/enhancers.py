@@ -13,7 +13,9 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_gigachat import GigaChat
 
+from app.config import get_agent_config
 from app.logging_config import get_logger
+from app.rag.config import RAGConfig, get_rag_config
 
 logger = get_logger(__name__)
 
@@ -51,9 +53,10 @@ class QueryRewriter:
 
     def __init__(self, llm: GigaChat | None = None):
         if llm is None:
+            agent_config = get_agent_config()
             llm = GigaChat(
-                model='GigaChat',
-                temperature=0.3,
+                model=agent_config.llm.model,
+                temperature=agent_config.llm.temperature_tools,
                 verify_ssl_certs=False,
             )
         self.chain = QUERY_REWRITE_PROMPT | llm | StrOutputParser()
@@ -131,11 +134,14 @@ class DocumentGrader:
     что снижает latency с ~10 секунд до ~1 секунды.
     """
 
-    def __init__(self, llm: GigaChat | None = None):
+    def __init__(self, llm: GigaChat | None = None, config: RAGConfig | None = None):
+        self._config = config or get_rag_config()
+
         if llm is None:
+            agent_config = get_agent_config()
             llm = GigaChat(
-                model='GigaChat',
-                temperature=0.0,  # детерминированный ответ
+                model=agent_config.llm.model,
+                temperature=agent_config.llm.temperature_classification,  # детерминированный
                 verify_ssl_certs=False,
             )
         self.chain = DOCUMENT_BATCH_GRADE_PROMPT | llm | StrOutputParser()
@@ -177,10 +183,11 @@ class DocumentGrader:
         """
         Форматирует документы для batch grading промпта
         """
+        preview_limit = self._config.search.content_preview_limit
         parts = []
         for i, doc in enumerate(documents, 1):
-            # берём первые 500 символов для краткости
-            text = doc.page_content[:500].replace('\n', ' ')
+            # берём первые N символов для краткости
+            text = doc.page_content[:preview_limit].replace('\n', ' ')
             title = doc.metadata.get('title', 'Без названия')
             parts.append(f'[{i}] {title}\n{text}...')
         return '\n\n'.join(parts)
@@ -270,7 +277,7 @@ class DocumentGrader:
         self,
         query: str,
         documents: list[Document],
-        min_relevant: int = 1,
+        min_relevant: int | None = None,
         deduplicate: bool = True,
     ) -> list[Document]:
         """
@@ -281,7 +288,7 @@ class DocumentGrader:
         Args:
             query: Запрос пользователя
             documents: Список документов для фильтрации
-            min_relevant: Минимум документов для возврата
+            min_relevant: Минимум документов для возврата (None = из конфига)
             deduplicate: Дедуплицировать чанки по url перед grading
 
         Returns:
@@ -289,6 +296,8 @@ class DocumentGrader:
         """
         if not documents:
             return []
+
+        effective_min_relevant = min_relevant if min_relevant is not None else self._config.search.min_relevant
 
         # Step 1: Дедупликация (уменьшает количество документов для grading)
         docs_to_grade = documents
@@ -309,14 +318,14 @@ class DocumentGrader:
             )
 
         # если слишком мало релевантных, возвращаем топ оригинальных
-        if len(relevant) < min_relevant:
+        if len(relevant) < effective_min_relevant:
             logger.warning(
                 "insufficient_relevant_docs",
                 found=len(relevant),
-                min_required=min_relevant,
+                min_required=effective_min_relevant,
                 fallback="returning_top_original",
             )
-            return docs_to_grade[:min_relevant]
+            return docs_to_grade[:effective_min_relevant]
 
         logger.info(
             "documents_filtered",
@@ -344,20 +353,23 @@ class EnhancedRAGSearch:
         use_query_rewriting: bool = True,
         use_document_grading: bool = True,
         llm: GigaChat | None = None,
+        config: RAGConfig | None = None,
     ):
         self.use_query_rewriting = use_query_rewriting
         self.use_document_grading = use_document_grading
+        self._config = config or get_rag_config()
 
         # общий LLM для всех компонентов
         if llm is None:
+            agent_config = get_agent_config()
             llm = GigaChat(
-                model='GigaChat',
-                temperature=0.3,
+                model=agent_config.llm.model,
+                temperature=agent_config.llm.temperature_tools,
                 verify_ssl_certs=False,
             )
 
         self.query_rewriter = QueryRewriter(llm) if use_query_rewriting else None
-        self.document_grader = DocumentGrader(llm) if use_document_grading else None
+        self.document_grader = DocumentGrader(llm, config=self._config) if use_document_grading else None
 
         # ленивая загрузка retriever через singleton
         self._retriever = None
@@ -385,20 +397,23 @@ class EnhancedRAGSearch:
     def search(
         self,
         query: str,
-        k: int = 5,
-        min_relevant: int = 2,
+        k: int | None = None,
+        min_relevant: int | None = None,
     ) -> tuple[list[Document], dict]:
         """
         Выполняет улучшенный поиск.
 
         Args:
             query: Запрос пользователя
-            k: Количество документов для поиска
-            min_relevant: Минимум релевантных документов
+            k: Количество документов для поиска (None = из конфига)
+            min_relevant: Минимум релевантных документов (None = из конфига)
 
         Returns:
             Кортеж (документы, метаданные поиска)
         """
+        effective_k = k if k is not None else self._config.search.k
+        effective_min_relevant = min_relevant if min_relevant is not None else self._config.search.min_relevant
+
         metadata = {
             'original_query': query,
             'rewritten_query': None,
@@ -414,7 +429,7 @@ class EnhancedRAGSearch:
 
         # Step 2: Hybrid Search
         # запрашиваем больше документов, чтобы после фильтрации осталось достаточно
-        fetch_k = k * 2 if self.document_grader else k
+        fetch_k = effective_k * self._config.search.overfetch_multiplier if self.document_grader else effective_k
         documents = self.retriever.search(search_query, k=fetch_k)
         metadata['retrieved_count'] = len(documents)
 
@@ -423,12 +438,12 @@ class EnhancedRAGSearch:
             documents = self.document_grader.filter_relevant(
                 query,  # используем оригинальный запрос для оценки
                 documents,
-                min_relevant=min_relevant,
+                min_relevant=effective_min_relevant,
             )
 
         metadata['filtered_count'] = len(documents)
 
         # ограничиваем до k
-        documents = documents[:k]
+        documents = documents[:effective_k]
 
         return documents, metadata

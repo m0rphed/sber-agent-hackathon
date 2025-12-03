@@ -12,18 +12,14 @@
 import argparse
 from datetime import datetime
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
+from app.logging_config import get_logger
 from app.rag.config import get_rag_config
 from app.rag.parsers import LifeSituationsParser
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def dump_single_page(url: str, output_dir: Path) -> None:
