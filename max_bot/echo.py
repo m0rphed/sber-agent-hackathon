@@ -16,13 +16,20 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(os.getenv('TOKEN_MAX'))
 dp = Dispatcher()
 
-
+@dp.bot_started()
+async def bot_started(event):
+    await event.bot.send_message(
+        chat_id=event.chat_id,
+        text='Привет! Отправь мне /start'
+    )
 
 @dp.message_created(F.message.body.text)
 async def echo(event: MessageCreated):
-    rich.print(event)
-    rich.print(event.chat.chat_id)
-    result = chat_with_agent(event.chat.chat_id, event.message.body.text)
+    result = await chat_with_agent(event.chat.chat_id, event.message.body.text)
+    rich.print(result)
+    print('-----------------------------')
+    print(f"ОТВЕТ: {result}")
+    print('-----------------------------')
     await event.message.answer(f"ОТВЕТ: {result}")
 
 

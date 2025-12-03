@@ -82,9 +82,18 @@ def get_last_user_message(state: AgentState) -> str:
 
     # Ищем последнее HumanMessage
     for msg in reversed(messages):
+        # Формат 1: LangChain HumanMessage объект
         if isinstance(msg, HumanMessage):
             content = msg.content
             return _extract_text_from_content(content)
+        
+        # Формат 2: Dict от LangGraph SDK ({"type": "human", "content": "..."})
+        if isinstance(msg, dict):
+            msg_type = msg.get('type', '')
+            # Проверяем разные варианты типа user-сообщения
+            if msg_type in ('human', 'user') or msg.get('role') == 'user':
+                content = msg.get('content', '')
+                return _extract_text_from_content(content)
 
     return ''
 
