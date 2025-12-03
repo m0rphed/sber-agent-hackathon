@@ -22,7 +22,7 @@ dp = Dispatcher()
 async def echo(event: MessageCreated):
     rich.print(event)
     rich.print(event.chat.chat_id)
-    result = await chat_with_agent(event.chat.chat_id, event.message.body.text)
+    result = chat_with_agent(event.chat.chat_id, event.message.body.text)
     await event.message.answer(f"ОТВЕТ: {result}")
 
 
