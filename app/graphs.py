@@ -86,7 +86,8 @@ def hybrid(config: RunnableConfig | None = None) -> CompiledStateGraph:
     Returns:
         Скомпилированный StateGraph
     """
-    from app.agent.hybrid import create_hybrid_graph
+    # from app.agent.hybrid import create_hybrid_graph
+    from app.agent.hybrid_matvey import create_hybrid_graph
 
     logger.info(
         'graph_factory_hybrid',

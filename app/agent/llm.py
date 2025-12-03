@@ -17,6 +17,24 @@ from app.config import (
 )
 
 
+def get_llm_for_intent_routing() -> GigaChat:
+    """
+    Лёгкая и дешёвая модель для роутинга намерений.
+    Те же креды GigaChat, но максимально детерминированные настройки.
+    """
+    return GigaChat(
+        credentials=GIGACHAT_CREDENTIALS,
+        scope=GIGACHAT_SCOPE,
+        verify_ssl_certs=GIGACHAT_VERIFY_SSL_CERTS,
+        # важные параметры именно для роутинга:
+        temperature=0.0,
+        max_tokens=256,
+        # top_p=0.2,
+        #
+        # frequency_penalty=0.0,
+        # presence_penalty=0.0,
+    )
+
 def get_llm(
     temperature: float | None = None,
     max_tokens: int | None = None,

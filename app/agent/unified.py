@@ -199,7 +199,8 @@ def _invoke_hybrid(
     with_persistence: bool = False,
 ) -> tuple[str, dict]:
     """Вызов Hybrid Agent Graph."""
-    from app.agent.hybrid import invoke_hybrid
+    # from app.agent.hybrid import invoke_hybrid
+    from app.agent.hybrid_matvey import invoke_hybrid
 
     return invoke_hybrid(
         query,

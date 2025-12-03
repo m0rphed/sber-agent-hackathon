@@ -1173,6 +1173,189 @@ class CityAppClient:
 
         return resp.json()
 
+    def get_road_info(self, district: str | None = None):
+        """
+        Информация о дорожной ситуации (работы ГАТИ).
+        Отвечает на вопрос:
+        «Есть ли проблемы с дорогами в районе X?».
+        """
+        resp = requests.get(
+            f'{self.api_site}/gati/',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+
+        data = resp.json()
+
+        # Если API уже умеет фильтровать по району — лучше перейти на params, но
+        # пока делаем фильтр на клиенте, если в ответе есть поле 'district' или аналог.
+        if district and isinstance(data, list):
+            filtered = [
+                item for item in data
+                if isinstance(item, dict)
+                and item.get('district') == district
+            ]
+            return filtered
+
+        return data
+    
+        # ---------------- Плановые работы (ГАТИ) -----------------
+
+    def get_gati_orders_map(self, params: dict[str, str | int] | None = None):
+        """
+        Ордера работ для отображения на карте: /gati/orders/map/
+
+        В params передаёшь фильтры из swagger (даты, типы работ и т.д.),
+        здесь специально оставлено как произвольный словарь.
+        """
+        resp = requests.get(
+            f'{self.api_site}/gati/orders/map/',
+            params=params or None,
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_gati_order_by_id(self, order_id: int):
+        """
+        Ордера работ по id: /gati/orders/{id}
+        """
+        resp = requests.get(
+            f'{self.api_site}/gati/orders/{order_id}',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_gati_work_types(self):
+        """
+        Типы работ (нормализованные): /gati/orders/work-type/
+        """
+        resp = requests.get(
+            f'{self.api_site}/gati/orders/work-type/',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_gati_work_types_raw(self):
+        """
+        Типы работ «как есть»: /gati/orders/work-type-all/
+        """
+        resp = requests.get(
+            f'{self.api_site}/gati/orders/work-type-all/',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_gati_organizations(self):
+        """
+        Ответственные организации: /gati/info/
+        """
+        resp = requests.get(
+            f'{self.api_site}/gati/info/',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_gati_orders_district_stats(self):
+        """
+        Ордера работ, количество по районам: /gati/orders/district/
+
+        Обычно это агрегат: [{ "district": "...", "count": N }, ...]
+        """
+        resp = requests.get(
+            f'{self.api_site}/gati/orders/district/',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_road_works_for_district(self, district: str) -> dict | None:
+        """
+        Удобный helper для сценария:
+        «Есть ли проблемы с дорогами в районе <district>?»
+
+        Использует агрегированный endpoint /gati/orders/district/.
+        """
+        stats = self.get_gati_orders_district_stats()
+        if not stats:
+            return None
+
+        # На всякий случай обрабатываем и список, и словарь
+        if isinstance(stats, list):
+            for item in stats:
+                if isinstance(item, dict) and item.get('district') == district:
+                    return item
+            return None
+
+        if isinstance(stats, dict) and stats.get('district') == district:
+            return stats
+
+        return None
+
+    def has_road_works_in_district(self, district: str) -> bool:
+        """
+        Булевка для быстрого ответа: есть работы / нет работ.
+        """
+        info = self.get_road_works_for_district(district)
+        if not info:
+            return False
+
+        # Здесь предполагаем, что в агрегате есть поле 'count' или аналог.
+        # Если окажется, что оно называется иначе — поменяешь ключ.
+        count = info.get('count') if isinstance(info, dict) else None
+        try:
+            return bool(count and int(count) > 0)
+        except (TypeError, ValueError):
+            return False
+
+        # ---------------- Отключения ЖКХ -----------------
+
+    def get_disconnections_by_building_id(self, building_id: int | str):
+        """
+        Отключения ЖКХ по building_id: /disconnections/building-id/{building_id}
+        """
+        resp = requests.get(
+            f'{self.api_site}/disconnections/building-id/{building_id}',
+            headers={'region': self.region_id},
+        )
+        if resp.status_code != 200:
+            print(f'код ошибки {resp.status_code}')
+            return None
+        return resp.json()
+
+    def get_disconnections_by_address(self, user_address: str):
+        """
+        Отключения ЖКХ по адресу пользователя.
+        Внутри сначала находим building_id через geo-api.
+        """
+        res = self._get_building_id_by_address(user_address)
+        if res is None:
+            return None
+
+        building_id, _, _ = res
+        if not building_id:
+            return None
+
+        return self.get_disconnections_by_building_id(building_id)
+
 
 if __name__ == '__main__':
 
@@ -1402,4 +1585,3 @@ if __name__ == '__main__':
         pprint(client.get_info_mancompany_company(user_address=user_address))
     except Exception as e:
         print('Ошибка при вызове get_info_mancompany_company(user_address=...):', e)
-
