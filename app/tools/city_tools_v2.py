@@ -749,6 +749,243 @@ def get_sport_categories_by_district_v2(district: str) -> str:
 
 
 # ============================================================================
+# Инструменты для услуг пенсионерам (Долголетие)
+# ============================================================================
+
+
+@tool
+def get_pensioner_service_categories_v2() -> str:
+    """
+    Получить список категорий услуг для пенсионеров (программа "Долголетие").
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие занятия есть для пенсионеров?
+    - Что входит в программу Долголетие?
+    - Виды активностей для пожилых людей
+
+    Returns:
+        Список категорий услуг (Вокал, Здоровье, Спорт и т.д.)
+    """
+    logger.info('tool_call', tool='get_pensioner_service_categories_v2')
+
+    async def _get_categories():
+        async with YazzhAsyncClient() as client:
+            categories = await client.get_pensioner_service_categories()
+
+            if not categories:
+                return 'Не удалось получить список категорий услуг для пенсионеров.'
+
+            lines = ['🎭 Категории услуг для пенсионеров (программа "Долголетие"):\n']
+            for cat in sorted(categories):
+                lines.append(f'• {cat}')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_categories())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_pensioner_service_categories_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info(
+        'tool_result', tool='get_pensioner_service_categories_v2', result_preview=result[:100]
+    )
+    return result
+
+
+@tool
+def get_pensioner_services_v2(
+    district: str,
+    category: str = '',
+) -> str:
+    """
+    Найти услуги для пенсионеров в районе по программе "Долголетие".
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие занятия для пенсионеров есть в [район]?
+    - Где заниматься йогой/танцами/рукоделием для пожилых?
+    - Услуги по программе Долголетие в моём районе
+    - Активности для людей старшего возраста
+
+    Args:
+        district: Район города (например: "Невский", "Центральный")
+        category: Категория услуги (например: "Здоровье", "Спорт", "Танцы").
+                  Пустая строка = все категории.
+
+    Returns:
+        Список услуг с адресами и описаниями
+    """
+    logger.info(
+        'tool_call',
+        tool='get_pensioner_services_v2',
+        district=district,
+        category=category,
+    )
+
+    async def _get_services():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_pensioner_services_for_chat
+
+            categories = [category] if category else None
+            services = await client.get_pensioner_services(
+                district=district,
+                categories=categories,
+                count=10,
+            )
+            return format_pensioner_services_for_chat(services)
+
+    try:
+        result = asyncio.run(_get_services())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_pensioner_services_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_pensioner_services_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для памятных дат
+# ============================================================================
+
+
+@tool
+def get_memorable_dates_today_v2() -> str:
+    """
+    Получить памятные даты в истории Санкт-Петербурга на сегодня.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие события произошли сегодня в истории Петербурга?
+    - Памятные даты на сегодня
+    - Что интересного случилось в этот день в истории города?
+    - Исторические события сегодняшнего дня
+
+    Returns:
+        Список памятных дат с описаниями
+    """
+    logger.info('tool_call', tool='get_memorable_dates_today_v2')
+
+    async def _get_dates():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_memorable_dates_for_chat
+
+            dates = await client.get_memorable_dates_today()
+            return format_memorable_dates_for_chat(dates)
+
+    try:
+        result = asyncio.run(_get_dates())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_memorable_dates_today_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_memorable_dates_today_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для спортплощадок (статистика)
+# ============================================================================
+
+
+@tool
+def get_sportgrounds_count_v2(district: str = '') -> str:
+    """
+    Получить количество спортплощадок в городе или конкретном районе.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Сколько спортплощадок в Санкт-Петербурге?
+    - Сколько спортплощадок в [район]?
+    - Статистика спортплощадок по районам
+    - В каком районе больше всего спортплощадок?
+
+    Args:
+        district: Район города (например: "Невский"). Пустая строка = статистика по всем районам.
+
+    Returns:
+        Количество спортплощадок
+    """
+    logger.info('tool_call', tool='get_sportgrounds_count_v2', district=district)
+
+    async def _get_count():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_sportgrounds_count_for_chat
+
+            if district:
+                # Конкретный район
+                counts = await client.get_sportgrounds_count_by_district(district)
+                return format_sportgrounds_count_for_chat(counts)
+            else:
+                # Статистика по всем районам
+                counts = await client.get_sportgrounds_count_by_district()
+                return format_sportgrounds_count_for_chat(counts)
+
+    try:
+        result = asyncio.run(_get_count())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sportgrounds_count_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_sportgrounds_count_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_sportgrounds_v2(
+    district: str = '',
+    sport_types: str = '',
+    count: int = 10,
+) -> str:
+    """
+    Найти спортивные площадки с фильтрами по району и типу спорта.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Где находятся спортплощадки в [район]?
+    - Покажи футбольные площадки в Невском районе
+    - Найди площадку для баскетбола рядом с домом
+    - Какие спортплощадки есть в [район]?
+    - Хочу поиграть в футбол, где можно?
+
+    Args:
+        district: Район города (например: "Невский"). Пустая строка = весь город.
+        sport_types: Типы спорта через запятую (например: "Футбол, Баскетбол").
+                     Пустая строка = все типы.
+        count: Количество площадок (по умолчанию 10, максимум 50).
+
+    Returns:
+        Список спортплощадок с адресами и типами спорта
+    """
+    logger.info(
+        'tool_call',
+        tool='get_sportgrounds_v2',
+        district=district,
+        sport_types=sport_types,
+        count=count,
+    )
+
+    # Ограничим количество
+    count = min(max(1, count), 50)
+
+    async def _get_sportgrounds():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_sportgrounds_for_chat
+
+            sportgrounds, total = await client.get_sportgrounds(
+                district=district or None,
+                sport_types=sport_types or None,
+                count=count,
+            )
+            return format_sportgrounds_for_chat(sportgrounds, total)
+
+    try:
+        result = asyncio.run(_get_sportgrounds())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sportgrounds_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_sportgrounds_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
 # Экспорт инструментов
 # ============================================================================
 
@@ -770,4 +1007,10 @@ city_tools_v2 = [
     get_disconnections_by_address_v2,
     get_sport_events_v2,
     get_sport_categories_by_district_v2,
+    # Tier 1: Пенсионеры, памятные даты, спортплощадки
+    get_pensioner_service_categories_v2,
+    get_pensioner_services_v2,
+    get_memorable_dates_today_v2,
+    get_sportgrounds_count_v2,
+    get_sportgrounds_v2,
 ]

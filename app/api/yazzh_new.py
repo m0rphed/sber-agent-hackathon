@@ -359,6 +359,121 @@ class EventInfo(BaseModel):
         return '\n'.join(lines)
 
 
+class PensionerServiceInfo(BaseModel):
+    """Информация об услуге для пенсионеров (программа Долголетие)"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: str | None = Field(None)
+    title: str | None = Field(None, description='Название услуги')
+    category: list[str] | None = Field(None, description='Категории')
+    location_title: str | None = Field(None, description='Название учреждения')
+    address: str | None = Field(None, description='Адрес')
+    district: str | None = Field(None, description='Район')
+    description: str | None = Field(None, description='Описание')
+    photos: list[str] | None = Field(None, description='Фотографии')
+    icon: str | None = Field(None, description='Иконка категории')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию об услуге для человека"""
+        lines = []
+        if self.title:
+            lines.append(f'👴 {self.title}')
+        if self.category:
+            lines.append(f'   Категория: {", ".join(self.category)}')
+        if self.location_title:
+            # Обрезаем длинные названия учреждений
+            loc = self.location_title
+            if len(loc) > 80:
+                loc = loc[:77] + '...'
+            lines.append(f'   🏢 {loc}')
+        if self.address:
+            lines.append(f'   📍 {self.address}')
+        if self.district:
+            lines.append(f'   🏙️ Район: {self.district}')
+        if self.description:
+            desc = self.description
+            if len(desc) > 200:
+                desc = desc[:197] + '...'
+            lines.append(f'   📝 {desc}')
+        return '\n'.join(lines)
+
+
+class MemorableDateInfo(BaseModel):
+    """Информация о памятной дате в истории Санкт-Петербурга"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int | None = Field(None)
+    title: str | None = Field(None, description='Название события')
+    date: str | None = Field(None, description='Дата события (ISO)')
+    description: str | None = Field(None, description='Описание')
+    str_date: str | None = Field(None, description='Дата прописью')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о памятной дате для человека"""
+        lines = []
+        if self.title:
+            lines.append(f'📅 {self.title}')
+        if self.date:
+            # Извлекаем год из ISO даты
+            try:
+                year = self.date.split('-')[0]
+                lines.append(f'   📆 Год: {year}')
+            except Exception:
+                pass
+        if self.str_date:
+            lines.append(f'   🗓️ {self.str_date}')
+        if self.description:
+            lines.append(f'   📖 {self.description}')
+        return '\n'.join(lines)
+
+
+class SportgroundCountInfo(BaseModel):
+    """Информация о количестве спортплощадок"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    count: int = Field(..., description='Количество площадок')
+    region: str | None = Field(None, description='Регион (по городу)')
+    district: str | None = Field(None, description='Район')
+    district_id: int | None = Field(None, description='ID района')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о количестве площадок"""
+        if self.district:
+            return f'🏟️ {self.district}: {self.count} площадок'
+        elif self.region:
+            return f'🏟️ {self.region}: {self.count} площадок'
+        return f'🏟️ Количество площадок: {self.count}'
+
+
+class SportgroundInfo(BaseModel):
+    """Информация о спортивной площадке"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int = Field(..., description='ID площадки')
+    name: str | None = Field(None, description='Название')
+    categories: str | None = Field(None, description='Категории спорта (через запятую)')
+    address: str | None = Field(None, description='Адрес')
+    coordinates: list[float] | None = Field(None, description='Координаты [lat, lon]')
+    district: str | None = Field(None, description='Район')
+    location: str | None = Field(None, description='Дополнительная локация')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о площадке"""
+        lines = []
+        if self.name:
+            lines.append(f'🏟️ {self.name}')
+        if self.categories:
+            lines.append(f'   🏀 Виды спорта: {self.categories}')
+        if self.address:
+            lines.append(f'   📍 {self.address}')
+        if self.district:
+            lines.append(f'   🏙️ Район: {self.district}')
+        return '\n'.join(lines)
+
 # ============================================================================
 # API Error handling
 # ============================================================================
@@ -1303,6 +1418,289 @@ class YazzhAsyncClient:
             return {cat: 0 for cat in data.get('type', [])}
         return {}
 
+    # -------------------------------------------------------------------------
+    # Услуги для пенсионеров (Долголетие)
+    # -------------------------------------------------------------------------
+
+    async def get_pensioner_service_categories(self) -> list[str]:
+        """
+        Получить список категорий услуг для пенсионеров.
+
+        Returns:
+            Список категорий (например: ["Вокал", "Здоровье", "Спорт"])
+        """
+        logger.info('api_call', method='get_pensioner_service_categories')
+
+        response = await self.client.get(f'{self.api_site}/pensioner/services/category/')
+
+        self._check_gateway_errors(response, 'get_pensioner_service_categories')
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        return data.get('category', [])
+
+    async def get_pensioner_services(
+        self,
+        district: str,
+        categories: list[str] | None = None,
+        count: int = 10,
+        page: int = 1,
+    ) -> list[PensionerServiceInfo]:
+        """
+        Получить услуги для пенсионеров по району и категориям.
+
+        Args:
+            district: Район города (например: "Невский")
+            categories: Список категорий (например: ["Здоровье", "Спорт"])
+            count: Количество результатов
+            page: Номер страницы
+
+        Returns:
+            Список услуг для пенсионеров
+        """
+        logger.info(
+            'api_call',
+            method='get_pensioner_services',
+            district=district,
+            categories=categories,
+        )
+
+        params: dict[str, Any] = {
+            'district': district,
+            'count': count,
+            'page': page,
+        }
+        if categories:
+            params['category'] = ','.join(categories)
+
+        response = await self.client.get(
+            f'{self.api_site}/pensioner/services/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_pensioner_services')
+
+        if response.status_code != 200:
+            logger.warning('api_error', method='get_pensioner_services', status=response.status_code)
+            return []
+
+        data = response.json()
+        services_data = data.get('data', [])
+
+        if isinstance(services_data, list):
+            return [PensionerServiceInfo.model_validate(s) for s in services_data]
+        return []
+
+    # -------------------------------------------------------------------------
+    # Памятные даты
+    # -------------------------------------------------------------------------
+
+    async def get_memorable_dates_by_date(
+        self,
+        day: int,
+        month: int,
+    ) -> list[MemorableDateInfo]:
+        """
+        Получить памятные даты на конкретный день.
+
+        Args:
+            day: День месяца (1-31)
+            month: Месяц (1-12)
+
+        Returns:
+            Список памятных дат для указанного дня
+        """
+        logger.info(
+            'api_call',
+            method='get_memorable_dates_by_date',
+            day=day,
+            month=month,
+        )
+
+        response = await self.client.get(
+            f'{self.api_site}/memorable_dates/date/',
+            params={'day': day, 'month': month},
+        )
+
+        self._check_gateway_errors(response, 'get_memorable_dates_by_date')
+
+        if response.status_code != 200:
+            logger.warning(
+                'api_error', method='get_memorable_dates_by_date', status=response.status_code
+            )
+            return []
+
+        data = response.json()
+        dates_data = data.get('data', [])
+
+        if isinstance(dates_data, list):
+            return [MemorableDateInfo.model_validate(d) for d in dates_data]
+        return []
+
+    async def get_memorable_dates_today(self) -> list[MemorableDateInfo]:
+        """
+        Получить памятные даты на сегодня.
+
+        Returns:
+            Список памятных дат на сегодняшний день
+        """
+        import pendulum
+
+        now = pendulum.now('Europe/Moscow')
+        return await self.get_memorable_dates_by_date(day=now.day, month=now.month)
+
+    # -------------------------------------------------------------------------
+    # Спортплощадки
+    # -------------------------------------------------------------------------
+
+    async def get_sportgrounds_count(self) -> SportgroundCountInfo | None:
+        """
+        Получить общее количество спортплощадок в городе.
+
+        Returns:
+            Информация о количестве площадок
+        """
+        logger.info('api_call', method='get_sportgrounds_count')
+
+        response = await self.client.get(f'{self.api_site}/sportgrounds/count/')
+
+        self._check_gateway_errors(response, 'get_sportgrounds_count')
+
+        if response.status_code != 200:
+            return None
+
+        data = response.json()
+        return SportgroundCountInfo.model_validate(data)
+
+    async def get_sportgrounds_count_by_district(
+        self,
+        district: str | None = None,
+    ) -> list[SportgroundCountInfo]:
+        """
+        Получить количество спортплощадок по районам.
+
+        Args:
+            district: Название района (если None — все районы)
+
+        Returns:
+            Список с количеством площадок по районам
+        """
+        logger.info('api_call', method='get_sportgrounds_count_by_district', district=district)
+
+        params: dict[str, str] = {}
+        if district:
+            params['district'] = district
+
+        response = await self.client.get(
+            f'{self.api_site}/sportgrounds/count/district/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_sportgrounds_count_by_district')
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        if isinstance(data, list):
+            return [SportgroundCountInfo.model_validate(d) for d in data]
+        return []
+
+    async def get_sportgrounds_types(self) -> dict[str, list[str]]:
+        """
+        Получить список типов спортплощадок.
+
+        Returns:
+            Словарь с типами: {"summer": [...], "winter": [...], "all": [...]}
+        """
+        logger.info('api_call', method='get_sportgrounds_types')
+
+        response = await self.client.get(f'{self.api_site}/sportgrounds/types/')
+
+        self._check_gateway_errors(response, 'get_sportgrounds_types')
+
+        if response.status_code != 200:
+            return {}
+
+        data = response.json()
+        return {
+            'summer': data.get('summer', []),
+            'winter': data.get('winter', []),
+            'all': data.get('all', []),
+        }
+
+    async def get_sportgrounds(
+        self,
+        district: str | None = None,
+        sport_types: str | None = None,
+        season: str = 'Все',
+        ovz: bool | None = None,
+        light: bool | None = None,
+        count: int = 10,
+        page: int = 1,
+    ) -> tuple[list[SportgroundInfo], int]:
+        """
+        Получить список спортплощадок с фильтрами.
+
+        Args:
+            district: Фильтр по району (напр. "Невский")
+            sport_types: Фильтр по типам спорта (напр. "Футбол, Баскетбол")
+            season: Сезон - "Все", "Лето", "Зима"
+            ovz: Доступность для людей с ОВЗ
+            light: Наличие освещения
+            count: Количество на странице
+            page: Номер страницы
+
+        Returns:
+            Кортеж (список площадок, общее количество)
+        """
+        logger.info(
+            'api_call',
+            method='get_sportgrounds',
+            district=district,
+            sport_types=sport_types,
+            season=season,
+        )
+
+        params: dict[str, str | int | bool] = {
+            'page': page,
+            'count': count,
+        }
+        if district:
+            params['district'] = district
+        if sport_types:
+            params['types'] = sport_types
+        if season:
+            params['season'] = season
+        if ovz is not None:
+            params['ovz'] = ovz
+        if light is not None:
+            params['light'] = light
+
+        response = await self.client.get(
+            f'{self.api_site}/sportgrounds/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_sportgrounds')
+
+        if response.status_code != 200:
+            return [], 0
+
+        data = response.json()
+        total_count = data.get('count', 0)
+        items = data.get('data', [])
+
+        sportgrounds = []
+        for item in items:
+            place = item.get('place', {})
+            if place:
+                sportgrounds.append(SportgroundInfo.model_validate(place))
+
+        return sportgrounds, total_count
+
 
 # ============================================================================
 # Форматтеры для вывода в чат
@@ -1399,6 +1797,74 @@ def format_sport_events_for_chat(events: list[SportEventInfo]) -> str:
     for event in events:
         lines.append(event.format_for_human())
         lines.append('')
+    return '\n'.join(lines)
+
+
+def format_pensioner_services_for_chat(services: list[PensionerServiceInfo]) -> str:
+    """Форматировать список услуг для пенсионеров"""
+    if not services:
+        return 'Услуги для пенсионеров не найдены по указанным параметрам.'
+
+    lines = [f'Найдено услуг для пенсионеров: {len(services)}\n']
+    for service in services:
+        lines.append(service.format_for_human())
+        lines.append('')
+    return '\n'.join(lines)
+
+
+def format_memorable_dates_for_chat(dates: list[MemorableDateInfo]) -> str:
+    """Форматировать памятные даты"""
+    if not dates:
+        return 'На эту дату памятных событий не найдено.'
+
+    lines = [f'📜 Памятные даты ({len(dates)} событий):\n']
+    for date in dates:
+        lines.append(date.format_for_human())
+        lines.append('')
+    return '\n'.join(lines)
+
+
+def format_sportgrounds_count_for_chat(
+    counts: list[SportgroundCountInfo] | SportgroundCountInfo | None,
+) -> str:
+    """Форматировать статистику спортплощадок"""
+    if counts is None:
+        return 'Не удалось получить информацию о спортплощадках.'
+
+    if isinstance(counts, SportgroundCountInfo):
+        return counts.format_for_human()
+
+    if not counts:
+        return 'Информация о спортплощадках не найдена.'
+
+    # Сортируем по количеству (убывание)
+    sorted_counts = sorted(counts, key=lambda x: x.count, reverse=True)
+
+    total = sum(c.count for c in sorted_counts)
+    lines = [f'🏟️ Спортплощадки по районам (всего {total}):\n']
+    for c in sorted_counts:
+        lines.append(f'• {c.district}: {c.count}')
+    return '\n'.join(lines)
+
+
+def format_sportgrounds_for_chat(
+    sportgrounds: list[SportgroundInfo],
+    total_count: int | None = None,
+) -> str:
+    """Форматировать список спортплощадок для чата"""
+    if not sportgrounds:
+        return 'Спортплощадки не найдены по указанным критериям.'
+
+    lines = []
+    if total_count is not None:
+        lines.append(f'🏟️ Найдено спортплощадок: {total_count} (показано {len(sportgrounds)})\n')
+    else:
+        lines.append(f'🏟️ Найдено спортплощадок: {len(sportgrounds)}\n')
+
+    for sg in sportgrounds:
+        lines.append(sg.format_for_human())
+        lines.append('')  # пустая строка
+
     return '\n'.join(lines)
 
 

@@ -671,6 +671,211 @@ async def demo_disconnections(raw: bool = False) -> None:
 
 
 # ============================================================================
+# Тесты для услуг пенсионерам (Долголетие)
+# ============================================================================
+
+
+async def demo_pensioner_services(raw: bool = False) -> None:
+    """
+    Тесты для услуг по программе Долголетие
+    """
+    from app.api.yazzh_new import YazzhAsyncClient
+
+    print_separator('👴 ТЕСТЫ УСЛУГ ДЛЯ ПЕНСИОНЕРОВ (Долголетие)')
+
+    async with YazzhAsyncClient() as client:
+        # Тест 1: Категории услуг
+        print_input('get_pensioner_service_categories')
+
+        try:
+            categories = await client.get_pensioner_service_categories()
+            print_output('get_pensioner_service_categories', categories, raw=raw)
+
+            if not raw and categories:
+                console.print(f'[green]✅ Категорий услуг: {len(categories)}[/green]')
+        except Exception as e:
+            print_error('get_pensioner_service_categories', e)
+
+        # Тест 2: Услуги в Невском районе по категории "Здоровье"
+        params = {'district': 'Невский', 'categories': ['Здоровье'], 'count': 3}
+        print_input('get_pensioner_services (Невский, Здоровье)', **params)
+
+        try:
+            services = await client.get_pensioner_services(**params)
+            print_output('get_pensioner_services', services, raw=raw)
+
+            if not raw and services:
+                console.print(f'[green]✅ Найдено услуг: {len(services)}[/green]')
+        except Exception as e:
+            print_error('get_pensioner_services', e)
+
+        # Тест 3: Услуги в Центральном районе без фильтра
+        params = {'district': 'Центральный', 'count': 5}
+        print_input('get_pensioner_services (Центральный, все)', **params)
+
+        try:
+            services = await client.get_pensioner_services(**params)
+            print_output('get_pensioner_services (Центральный)', services, raw=raw)
+
+            if not raw and services:
+                console.print(f'[green]✅ Найдено услуг: {len(services)}[/green]')
+        except Exception as e:
+            print_error('get_pensioner_services', e)
+
+
+# ============================================================================
+# Тесты для памятных дат
+# ============================================================================
+
+
+async def demo_memorable_dates(raw: bool = False) -> None:
+    """
+    Тесты для памятных дат в истории Санкт-Петербурга
+    """
+    from app.api.yazzh_new import YazzhAsyncClient
+
+    print_separator('📅 ТЕСТЫ ПАМЯТНЫХ ДАТ')
+
+    async with YazzhAsyncClient() as client:
+        # Тест 1: Памятные даты на сегодня
+        print_input('get_memorable_dates_today')
+
+        try:
+            dates = await client.get_memorable_dates_today()
+            print_output('get_memorable_dates_today', dates, raw=raw)
+
+            if not raw:
+                if dates:
+                    console.print(f'[green]✅ Событий сегодня: {len(dates)}[/green]')
+                else:
+                    console.print('[dim]На сегодня памятных дат нет[/dim]')
+        except Exception as e:
+            print_error('get_memorable_dates_today', e)
+
+        # Тест 2: Памятные даты на 1 января (день основания радиовещания)
+        params = {'day': 1, 'month': 1}
+        print_input('get_memorable_dates_by_date (1 января)', **params)
+
+        try:
+            dates = await client.get_memorable_dates_by_date(**params)
+            print_output('get_memorable_dates_by_date (1 янв)', dates, raw=raw)
+
+            if not raw and dates:
+                console.print(f'[green]✅ Событий 1 января: {len(dates)}[/green]')
+        except Exception as e:
+            print_error('get_memorable_dates_by_date', e)
+
+        # Тест 3: Памятные даты на 27 мая (день основания СПб)
+        params = {'day': 27, 'month': 5}
+        print_input('get_memorable_dates_by_date (27 мая)', **params)
+
+        try:
+            dates = await client.get_memorable_dates_by_date(**params)
+            print_output('get_memorable_dates_by_date (27 мая)', dates, raw=raw)
+
+            if not raw and dates:
+                console.print(f'[green]✅ Событий 27 мая: {len(dates)}[/green]')
+        except Exception as e:
+            print_error('get_memorable_dates_by_date', e)
+
+
+# ============================================================================
+# Тесты для спортплощадок
+# ============================================================================
+
+
+async def demo_sportgrounds(raw: bool = False) -> None:
+    """
+    Тесты для статистики спортплощадок
+    """
+    from app.api.yazzh_new import YazzhAsyncClient
+
+    print_separator('🏟️ ТЕСТЫ СПОРТПЛОЩАДОК')
+
+    async with YazzhAsyncClient() as client:
+        # Тест 1: Общее количество
+        print_input('get_sportgrounds_count')
+
+        try:
+            total = await client.get_sportgrounds_count()
+            print_output('get_sportgrounds_count', total, raw=raw)
+
+            if not raw and total:
+                console.print(f'[green]✅ Всего площадок: {total.count}[/green]')
+        except Exception as e:
+            print_error('get_sportgrounds_count', e)
+
+        # Тест 2: По всем районам
+        print_input('get_sportgrounds_count_by_district (все)')
+
+        try:
+            by_district = await client.get_sportgrounds_count_by_district()
+            print_output('get_sportgrounds_count_by_district', by_district, raw=raw)
+
+            if not raw and by_district:
+                total = sum(d.count for d in by_district)
+                console.print(f'[green]✅ Районов: {len(by_district)}, всего: {total}[/green]')
+        except Exception as e:
+            print_error('get_sportgrounds_count_by_district', e)
+
+        # Тест 3: Конкретный район
+        district = 'Невский'
+        print_input('get_sportgrounds_count_by_district', district=district)
+
+        try:
+            result = await client.get_sportgrounds_count_by_district(district)
+            print_output(f'get_sportgrounds_count ({district})', result, raw=raw)
+
+            if not raw and result:
+                console.print(f'[green]✅ В {district} районе: {result[0].count}[/green]')
+        except Exception as e:
+            print_error('get_sportgrounds_count_by_district', e)
+
+        # Тест 4: Типы спортплощадок
+        print_input('get_sportgrounds_types')
+
+        try:
+            types = await client.get_sportgrounds_types()
+            print_output('get_sportgrounds_types', types, raw=raw)
+
+            if not raw and types:
+                console.print(f'[green]✅ Летние: {len(types.get("summer", []))}, '
+                            f'Зимние: {len(types.get("winter", []))}, '
+                            f'Все: {len(types.get("all", []))}[/green]')
+        except Exception as e:
+            print_error('get_sportgrounds_types', e)
+
+        # Тест 5: Список спортплощадок по району
+        district = 'Невский'
+        print_input('get_sportgrounds (список)', district=district, count=3)
+
+        try:
+            sportgrounds, total = await client.get_sportgrounds(district=district, count=3)
+            print_output(f'get_sportgrounds ({district})', sportgrounds, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Всего: {total}, показано: {len(sportgrounds)}[/green]')
+        except Exception as e:
+            print_error('get_sportgrounds', e)
+
+        # Тест 6: Спортплощадки с фильтром по типу спорта
+        print_input('get_sportgrounds (Футбол)', district='Центральный', sport_types='Футбол')
+
+        try:
+            sportgrounds, total = await client.get_sportgrounds(
+                district='Центральный',
+                sport_types='Футбол',
+                count=3,
+            )
+            print_output('get_sportgrounds (Футбол)', sportgrounds, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Футбольных площадок в Центральном: {total}[/green]')
+        except Exception as e:
+            print_error('get_sportgrounds', e)
+
+
+# ============================================================================
 # Тесты для МФЦ
 # ============================================================================
 
@@ -1129,6 +1334,15 @@ def demo(
     disconnections: Annotated[
         bool, typer.Option('--disconnections', '--disc', help='Тесты отключений')
     ] = False,
+    pensioner: Annotated[
+        bool, typer.Option('--pensioner', '--pens', help='Тесты услуг Долголетие')
+    ] = False,
+    memorable: Annotated[
+        bool, typer.Option('--memorable', '--mem', help='Тесты памятных дат')
+    ] = False,
+    sportgrounds: Annotated[
+        bool, typer.Option('--sportgrounds', '--sg', help='Тесты спортплощадок')
+    ] = False,
     mfc: Annotated[bool, typer.Option('--mfc', '-m', help='Тесты МФЦ')] = False,
     schools: Annotated[bool, typer.Option('--schools', '-s', help='Тесты школ')] = False,
     polyclinics: Annotated[
@@ -1148,6 +1362,7 @@ def demo(
         python -m tests.test_yazzh_rich demo --buildings
         python -m tests.test_yazzh_rich demo --schools --polyclinics
         python -m tests.test_yazzh_rich demo --sport --disconnections
+        python -m tests.test_yazzh_rich demo --pensioner --memorable --sportgrounds
         python -m tests.test_yazzh_rich demo -b -s -p -i --raw
     """
     if not any(
@@ -1158,6 +1373,9 @@ def demo(
             afisha,
             sport,
             disconnections,
+            pensioner,
+            memorable,
+            sportgrounds,
             mfc,
             schools,
             polyclinics,
@@ -1184,6 +1402,12 @@ def demo(
             await demo_sport_events(raw=raw)
         if disconnections:
             await demo_disconnections(raw=raw)
+        if pensioner:
+            await demo_pensioner_services(raw=raw)
+        if memorable:
+            await demo_memorable_dates(raw=raw)
+        if sportgrounds:
+            await demo_sportgrounds(raw=raw)
         if mfc:
             await demo_mfc(raw=raw)
         if schools:
@@ -1221,6 +1445,9 @@ def run_all(
         await demo_events(raw=raw)
         await demo_sport_events(raw=raw)
         await demo_disconnections(raw=raw)
+        await demo_pensioner_services(raw=raw)
+        await demo_memorable_dates(raw=raw)
+        await demo_sportgrounds(raw=raw)
         await demo_mfc(raw=raw)
         await demo_schools(raw=raw)
         await demo_polyclinics(raw=raw)
