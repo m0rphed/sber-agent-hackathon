@@ -7,7 +7,7 @@ Supervisor Graph - унифицированный агент с роутинго
                         ┌─────────────────────────┼─────────────────────────┐
                         ↓                         ↓                         ↓
                   api_handler              rag_search                 conversation
-                  (MFC, пенсионеры)        (госуслуги)               (chitchat)
+                  (городские сервисы)      (госуслуги)               (chitchat)
                         ↓                         ↓                         ↓
                         └─────────────────────────┼─────────────────────────┘
                                                   ↓
@@ -50,7 +50,31 @@ class IntentLLMOutput(BaseModel):
     """Структура ответа от LLM-роутера для Supervisor."""
 
     intent: Literal[
-        'mfc_search', 'pensioner_categories', 'pensioner_services', 'rag_search', 'conversation'
+        # Адресные сервисы
+        'mfc_search',
+        'polyclinic_by_address',
+        'schools_by_address',
+        'management_company_by_address',
+        'district_info_by_address',
+        'disconnections_by_address',
+        # Районы
+        'mfc_list_by_district',
+        'kindergartens',
+        'sport_events',
+        'sport_categories_by_district',
+        'sportgrounds',
+        'sportgrounds_count',
+        # Глобальные списки/афиша/история
+        'districts_list',
+        'city_events',
+        'event_categories',
+        'memorable_dates_today',
+        # Пенсионеры
+        'pensioner_categories',
+        'pensioner_services',
+        # Базовые
+        'rag_search',
+        'conversation',
     ]
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
@@ -64,86 +88,71 @@ INTENT_HISTORY_MESSAGES: int = 4
 
 
 class Intent(str, Enum):
-    """Типы намерений пользователя."""
+    """
+    Типы намерений пользователя.
 
-    MFC_SEARCH = 'mfc_search'  # Поиск МФЦ
-    PENSIONER_CATEGORIES = 'pensioner_categories'  # Категории для пенсионеров
-    PENSIONER_SERVICES = 'pensioner_services'  # Услуги для пенсионеров
-    RAG_SEARCH = 'rag_search'  # Поиск по госуслугам
-    CONVERSATION = 'conversation'  # Обычный разговор
-    UNKNOWN = 'unknown'  # Неизвестное намерение
+    Адресные сервисы (нужен конкретный адрес):
+    - MFC_SEARCH                    — поиск ближайшего МФЦ по адресу
+    - POLYCLINIC_BY_ADDRESS         — поликлиники по адресу
+    - SCHOOLS_BY_ADDRESS            — школы, прикреплённые к дому
+    - MANAGEMENT_COMPANY_BY_ADDRESS — управляющая компания дома
+    - DISTRICT_INFO_BY_ADDRESS      — справка по району по адресу
+    - DISCONNECTIONS_BY_ADDRESS     — отключения воды/электричества по адресу
 
+    Районные сервисы (нужен район):
+    - MFC_LIST_BY_DISTRICT          — список МФЦ в районе
+    - KINDERGARTENS                 — детские сады в районе
+    - SPORT_EVENTS                  — спортивные мероприятия в районе
+    - SPORT_CATEGORIES_BY_DISTRICT  — виды спорта в районе
+    - SPORTGROUNDS                  — спортплощадки (опционально по району)
+    - SPORTGROUNDS_COUNT            — количество спортплощадок (город/район)
 
-# Ключевые слова для простой классификации (fallback)
-INTENT_KEYWORDS = {
-    Intent.MFC_SEARCH: [
-        'мфц',
-        'многофункциональный центр',
-        'ближайший мфц',
-        'адрес мфц',
-        'где мфц',
-        'часы работы мфц',
-        'время работы мфц',
-        'телефон мфц',
-    ],
-    Intent.PENSIONER_CATEGORIES: [
-        'категории для пенсионеров',
-        'какие услуги для пенсионеров',
-        'список категорий пенсионер',
-        'виды услуг пенсионер',
-    ],
-    Intent.PENSIONER_SERVICES: [
-        'услуги для пенсионеров',
-        'занятия для пенсионеров',
-        'кружки для пенсионеров',
-        'пенсионер район',
-        'секции для пожилых',
-        'курсы для пенсионеров',
-    ],
-    Intent.RAG_SEARCH: [
-        'как получить',
-        'как оформить',
-        'какие документы',
-        'где оформить',
-        'госуслуг',
-        'паспорт',
-        'прописка',
-        'регистрация',
-        'справка',
-        'пособие',
-        'субсидия',
-        'льгота',
-        'заявление',
-        'выплата',
-        'компенсация',
-        'сертификат',
-        'удостоверение',
-        'свидетельство',
-        'лицензия',
-        'разрешение',
-        'порядок оформления',
-        'срок получения',
-        'стоимость услуги',
-        'госпошлина',
-    ],
-    Intent.CONVERSATION: [
-        'привет',
-        'здравствуй',
-        'добрый день',
-        'добрый вечер',
-        'доброе утро',
-        'спасибо',
-        'благодарю',
-        'пока',
-        'до свидания',
-        'как дела',
-        'кто ты',
-        'что ты умеешь',
-        'помоги',
-        'помощь',
-        'что ты можешь',
-    ],
-}
+    Городская информация:
+    - DISTRICTS_LIST                — список районов
+    - CITY_EVENTS                   — городская афиша
+    - EVENT_CATEGORIES              — категории мероприятий
+    - MEMORABLE_DATES_TODAY         — памятные даты сегодня
+
+    Пенсионеры:
+    - PENSIONER_CATEGORIES          — категории услуг для пенсионеров
+    - PENSIONER_SERVICES            — услуги для пенсионеров в районе
+
+    Базовые:
+    - RAG_SEARCH                    — поиск по базе знаний госуслуг
+    - CONVERSATION                  — обычный разговор / small talk
+    - UNKNOWN                       — неизвестное намерение
+    """
+
+    # Адресные
+    MFC_SEARCH = 'mfc_search'
+    POLYCLINIC_BY_ADDRESS = 'polyclinic_by_address'
+    SCHOOLS_BY_ADDRESS = 'schools_by_address'
+    MANAGEMENT_COMPANY_BY_ADDRESS = 'management_company_by_address'
+    DISTRICT_INFO_BY_ADDRESS = 'district_info_by_address'
+    DISCONNECTIONS_BY_ADDRESS = 'disconnections_by_address'
+
+    # Районы
+    MFC_LIST_BY_DISTRICT = 'mfc_list_by_district'
+    KINDERGARTENS = 'kindergartens'
+    SPORT_EVENTS = 'sport_events'
+    SPORT_CATEGORIES_BY_DISTRICT = 'sport_categories_by_district'
+    SPORTGROUNDS = 'sportgrounds'
+    SPORTGROUNDS_COUNT = 'sportgrounds_count'
+
+    # Город
+    DISTRICTS_LIST = 'districts_list'
+    CITY_EVENTS = 'city_events'
+    EVENT_CATEGORIES = 'event_categories'
+    MEMORABLE_DATES_TODAY = 'memorable_dates_today'
+
+    # Пенсионеры
+    PENSIONER_CATEGORIES = 'pensioner_categories'
+    PENSIONER_SERVICES = 'pensioner_services'
+
+    # Базовые
+    RAG_SEARCH = 'rag_search'
+    CONVERSATION = 'conversation'
+    UNKNOWN = 'unknown'
 
 
 # =============================================================================
@@ -208,18 +217,6 @@ def _classify_intent_with_llm(
 ) -> IntentLLMOutput | None:
     """
     Классификация намерения с помощью LLM-роутера (тот же, что в Hybrid-графе).
-
-    Parameters
-    ----------
-    query : str
-        Последний запрос пользователя (как он есть).
-    history : list[BaseMessage]
-        История диалога.
-
-    Returns
-    -------
-    IntentLLMOutput | None
-        Структурированный ответ или None, если произошла ошибка.
     """
     try:
         from textwrap import dedent
@@ -229,104 +226,67 @@ def _classify_intent_with_llm(
         llm = get_llm_for_intent_routing().with_structured_output(IntentLLMOutput)
 
         prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                dedent(
-                    """\
-                    Ты — классификатор намерений городского помощника Санкт-Петербурга.
+            [
+                (
+                    'system',
+                    dedent(
+                        """\
+                        Ты — классификатор намерений городского помощника Санкт-Петербурга.
 
-                    Твоя задача — по диалогу и последнему сообщению пользователя выбрать,
-                    какой обработчик нужно вызвать.
+                        Твоя задача — по диалогу и последнему сообщению пользователя выбрать,
+                        какой обработчик нужно вызвать.
 
-                    Варианты intent:
-                    - "mfc_search" — если пользователю нужно:
-                    • найти ближайший МФЦ, его адрес или режим работы;
-                    • понять, в какое МФЦ прийти (по адресу/району/услуге),
-                        а не порядок оформления самой госуслуги.
+                        Категории intent (кратко):
 
-                    - "pensioner_categories" — если он спрашивает о категориях/типах услуг
-                    для пенсионеров (список направлений, видов активностей, тем занятий).
+                        Адресные сервисы:
+                        - "mfc_search" — ближайший МФЦ по адресу.
+                        - "polyclinic_by_address" — поликлиники по адресу.
+                        - "schools_by_address" — школы, прикреплённые к дому.
+                        - "management_company_by_address" — управляющая компания дома.
+                        - "district_info_by_address" — справка по району по адресу.
+                        - "disconnections_by_address" — отключения воды/света по адресу.
 
-                    - "pensioner_services" — если он ищет конкретные активности/кружки/услуги
-                    для пенсионеров в районе или по месту жительства (что, где и когда проходит).
+                        Районные сервисы:
+                        - "mfc_list_by_district" — список МФЦ в районе.
+                        - "kindergartens" — детские сады в районе.
+                        - "sport_events" — спортивные мероприятия (обычно с районом).
+                        - "sport_categories_by_district" — виды спорта в районе.
+                        - "sportgrounds" — спортплощадки города/района.
+                        - "sportgrounds_count" — количество спортплощадок.
 
-                    - "rag_search" — если вопрос про оформление документов, льготы, пособия,
-                    требования, порядок действий, нужные документы, сроки, стоимость, госпошлину
-                    и другие формальные условия оказания госуслуг.
+                        Городская информация:
+                        - "districts_list" — список районов города.
+                        - "city_events" — афиша мероприятий.
+                        - "event_categories" — категории мероприятий.
+                        - "memorable_dates_today" — памятные даты сегодня.
 
-                    - "conversation" — если это приветствие, благодарность, small talk
-                    или вопрос о самом боте (кто ты, чем помогаешь и т.д.).
+                        Пенсионеры:
+                        - "pensioner_categories" — общие категории услуг для пенсионеров.
+                        - "pensioner_services" — конкретные занятия/услуги для пенсионеров в районе.
 
-                    Примеры разбора диалогов:
+                        Базовые:
+                        - "rag_search" — если вопрос про оформление документов, льготы, порядок действий,
+                          требования, госпошлины и т.п. (формальные госуслуги).
+                        - "conversation" — приветствия, благодарности, small talk, вопросы о самом боте.
 
-                    Диалог 1:
-                    user: Где ближайший МФЦ к Невскому проспекту 1?
-                    assistant: (ещё нет ответа)
-                    → intent: "mfc_search"
-                    → reason: напрямую спрашивают о ближайшем центре МФЦ по адресу.
-
-                    Диалог 2:
-                    user: В каком МФЦ можно подать документы на загранпаспорт?
-                    assistant: (ещё нет ответа)
-                    → intent: "mfc_search"
-                    → reason: хотят узнать, в какой центр прийти, а не порядок оформления услуги.
-
-                    Диалог 3:
-                    user: Как получить загранпаспорт?
-                    assistant: (ещё нет ответа)
-                    → intent: "rag_search"
-                    → reason: вопрос про порядок оформления госуслуги и документы.
-
-                    Диалог 4:
-                    user: Какие есть услуги для пенсионеров в Невском районе?
-                    assistant: (ещё нет ответа)
-                    → intent: "pensioner_services"
-                    → reason: интересуются конкретными занятиями для пенсионеров в указанном районе.
-
-                    Диалог 5:
-                    user: Какие занятия есть для пенсионеров по программе Долголетие?
-                    assistant: (ещё нет ответа)
-                    → intent: "pensioner_categories"
-                    → reason: запрос на общий список категорий/типов активностей, без указания района.
-
-                    Диалог 6:
-                    user: Привет! Как ты работаешь?
-                    assistant: (ещё нет ответа)
-                    → intent: "conversation"
-                    → reason: приветствие и вопрос о возможностях бота.
-
-                    Диалог 7:
-                    user: Мне нужна справка о регистрации по месту жительства. Что делать?
-                    assistant: (ещё нет ответа)
-                    → intent: "rag_search"
-                    → reason: спрашивают про порядок получения справки и шаги оформления.
-
-                    Диалог 8:
-                    user: Подскажи, в каком МФЦ принимают документы на регистрацию по месту жительства
-                        около проспекта Большевиков 10?
-                    assistant: (ещё нет ответа)
-                    → intent: "mfc_search"
-                    → reason: приоритет — найти конкретный центр МФЦ рядом с адресом.
-
-                    Всегда возвращай СТРОГИЙ JSON со следующими полями:
-                    - intent: "mfc_search" | "pensioner_categories" | "pensioner_services" | "rag_search" | "conversation"
-                    - confidence: число от 0 до 1 (насколько ты уверен)
-                    - reason: короткое объяснение, почему выбран именно этот intent.
-                    """
+                        Всегда возвращай СТРОГИЙ JSON со следующими полями:
+                        - intent: одно из перечисленных значений
+                        - confidence: число от 0 до 1 (насколько ты уверен)
+                        - reason: короткое объяснение, почему выбран именно этот intent.
+                        """
+                    ),
                 ),
-            ),
-            (
-                "human",
-                """Ниже приведена часть диалога (от старых сообщений к новым):
+                (
+                    'human',
+                    """Ниже приведена часть диалога (от старых сообщений к новым):
 
-                {dialog}
+                    {dialog}
 
-                Последнее сообщение пользователя:
-                {last_message}""",
-            ),
-        ]
-    )
+                    Последнее сообщение пользователя:
+                    {last_message}""",
+                ),
+            ]
+        )
 
         # Собираем компактное текстовое представление истории
         dialog_lines: list[str] = []
@@ -354,7 +314,8 @@ def classify_intent_node(state: SupervisorState) -> dict:
     """
     Узел 2: Классификация намерения пользователя.
 
-    Теперь использует общий LLM-роутер (как в Hybrid-графе) и структурированный вывод.
+    Использует LLM-роутер со структурированным выводом.
+    При любой ошибке LLM — безопасный fallback в RAG.
     """
     query_raw = get_last_user_message(state)
     logger.info('supervisor_node', node='classify_intent', query=query_raw[:100])
@@ -372,10 +333,30 @@ def classify_intent_node(state: SupervisorState) -> dict:
 
     if llm_result is not None:
         # Пробуем замапить строку на Enum Intent
-        intent_map = {
+        intent_map: dict[str, Intent] = {
+            # Адресные
             'mfc_search': Intent.MFC_SEARCH,
+            'polyclinic_by_address': Intent.POLYCLINIC_BY_ADDRESS,
+            'schools_by_address': Intent.SCHOOLS_BY_ADDRESS,
+            'management_company_by_address': Intent.MANAGEMENT_COMPANY_BY_ADDRESS,
+            'district_info_by_address': Intent.DISTRICT_INFO_BY_ADDRESS,
+            'disconnections_by_address': Intent.DISCONNECTIONS_BY_ADDRESS,
+            # Районы
+            'mfc_list_by_district': Intent.MFC_LIST_BY_DISTRICT,
+            'kindergartens': Intent.KINDERGARTENS,
+            'sport_events': Intent.SPORT_EVENTS,
+            'sport_categories_by_district': Intent.SPORT_CATEGORIES_BY_DISTRICT,
+            'sportgrounds': Intent.SPORTGROUNDS,
+            'sportgrounds_count': Intent.SPORTGROUNDS_COUNT,
+            # Город
+            'districts_list': Intent.DISTRICTS_LIST,
+            'city_events': Intent.CITY_EVENTS,
+            'event_categories': Intent.EVENT_CATEGORIES,
+            'memorable_dates_today': Intent.MEMORABLE_DATES_TODAY,
+            # Пенсионеры
             'pensioner_categories': Intent.PENSIONER_CATEGORIES,
             'pensioner_services': Intent.PENSIONER_SERVICES,
+            # Базовые
             'rag_search': Intent.RAG_SEARCH,
             'conversation': Intent.CONVERSATION,
         }
@@ -412,33 +393,44 @@ def classify_intent_node(state: SupervisorState) -> dict:
     }
 
 
-def _keyword_classification(query: str) -> Intent:
-    """Простая классификация по ключевым словам."""
+def _extract_params_simple(query: str, intent: Intent) -> dict:
+    """Извлечение параметров из запроса (простая версия, не для классификации)."""
+    params: dict[str, Any] = {}
+
     query_lower = query.lower()
 
-    for intent, keywords in INTENT_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword in query_lower:
-                return intent
+    # Набор intent-ов, где нам нужен адрес
+    address_intents = {
+        Intent.MFC_SEARCH,
+        Intent.POLYCLINIC_BY_ADDRESS,
+        Intent.SCHOOLS_BY_ADDRESS,
+        Intent.MANAGEMENT_COMPANY_BY_ADDRESS,
+        Intent.DISTRICT_INFO_BY_ADDRESS,
+        Intent.DISCONNECTIONS_BY_ADDRESS,
+    }
 
-    return Intent.UNKNOWN
+    # Набор intent-ов, где нам нужен район
+    district_intents = {
+        Intent.MFC_LIST_BY_DISTRICT,
+        Intent.KINDERGARTENS,
+        Intent.SPORT_EVENTS,
+        Intent.SPORT_CATEGORIES_BY_DISTRICT,
+        Intent.SPORTGROUNDS,
+        Intent.SPORTGROUNDS_COUNT,
+        Intent.PENSIONER_SERVICES,
+    }
 
-
-def _extract_params_simple(query: str, intent: Intent) -> dict:
-    """Извлечение параметров из запроса (простая версия)."""
-    params = {}
-
-    if intent == Intent.MFC_SEARCH:
-        # Пытаемся найти адрес в запросе
-        # Упрощённая логика - просто берём часть после "около", "рядом с", "у"
+    if intent in address_intents:
+        # Упрощённая логика — берём текст после маркера "около/рядом/у/возле/на"
         for marker in ['около ', 'рядом с ', 'у ', 'возле ', 'на ']:
-            if marker in query.lower():
-                idx = query.lower().find(marker)
-                params['address'] = query[idx + len(marker) :].strip()
+            if marker in query_lower:
+                idx = query_lower.find(marker)
+                params['address'] = query[idx + len(marker):].strip()
                 break
+        # Если маркер не найден — можно в будущем добавить более умный парсер;
+        # сейчас просто оставляем address пустым и хендлер сам попросит уточнить.
 
-    elif intent == Intent.PENSIONER_SERVICES:
-        # Ищем район
+    if intent in district_intents:
         districts = [
             'адмиралтейский',
             'василеостровский',
@@ -460,9 +452,12 @@ def _extract_params_simple(query: str, intent: Intent) -> dict:
             'центральный',
         ]
         for district in districts:
-            if district in query.lower():
+            if district in query_lower:
                 params['district'] = district.capitalize()
                 break
+
+    # Для событий/спорта можно в будущем вытаскивать категорию, бесплатность и т.п.
+    # Пока оставляем это на дефолты в хендлерах.
 
     return params
 
@@ -474,7 +469,7 @@ def _extract_params_simple(query: str, intent: Intent) -> dict:
 
 def api_handler_node(state: SupervisorState) -> dict:
     """
-    Узел: Обработка API запросов (МФЦ, пенсионеры).
+    Узел: Обработка API запросов (городские сервисы).
     """
     from app.agent.resilience import create_error_state_update
 
@@ -486,12 +481,46 @@ def api_handler_node(state: SupervisorState) -> dict:
     try:
         if intent == Intent.MFC_SEARCH.value:
             result = _handle_mfc_search(params)
+        elif intent == Intent.POLYCLINIC_BY_ADDRESS.value:
+            result = _handle_polyclinic_by_address(params)
+        elif intent == Intent.SCHOOLS_BY_ADDRESS.value:
+            result = _handle_schools_by_address(params)
+        elif intent == Intent.MANAGEMENT_COMPANY_BY_ADDRESS.value:
+            result = _handle_management_company_by_address(params)
+        elif intent == Intent.DISTRICT_INFO_BY_ADDRESS.value:
+            result = _handle_district_info_by_address(params)
+        elif intent == Intent.DISCONNECTIONS_BY_ADDRESS.value:
+            result = _handle_disconnections_by_address(params)
+
+        elif intent == Intent.MFC_LIST_BY_DISTRICT.value:
+            result = _handle_mfc_list_by_district(params)
+        elif intent == Intent.KINDERGARTENS.value:
+            result = _handle_kindergartens(params)
+        elif intent == Intent.SPORT_EVENTS.value:
+            result = _handle_sport_events(params)
+        elif intent == Intent.SPORT_CATEGORIES_BY_DISTRICT.value:
+            result = _handle_sport_categories_by_district(params)
+        elif intent == Intent.SPORTGROUNDS.value:
+            result = _handle_sportgrounds(params)
+        elif intent == Intent.SPORTGROUNDS_COUNT.value:
+            result = _handle_sportgrounds_count(params)
+
+        elif intent == Intent.DISTRICTS_LIST.value:
+            result = _handle_districts_list()
+        elif intent == Intent.CITY_EVENTS.value:
+            result = _handle_city_events()
+        elif intent == Intent.EVENT_CATEGORIES.value:
+            result = _handle_event_categories()
+        elif intent == Intent.MEMORABLE_DATES_TODAY.value:
+            result = _handle_memorable_dates_today()
+
         elif intent == Intent.PENSIONER_CATEGORIES.value:
             result = _handle_pensioner_categories()
         elif intent == Intent.PENSIONER_SERVICES.value:
             result = _handle_pensioner_services(params)
+
         else:
-            result = 'Не удалось определить тип запроса к API.'
+            result = 'Не удалось определить тип запроса к городским сервисам.'
 
         logger.info('api_handler_complete', result_length=len(result))
         return {
@@ -508,8 +537,13 @@ def api_handler_node(state: SupervisorState) -> dict:
         return error_update
 
 
+# ==========================
+# Отдельные хендлеры
+# ==========================
+
+
 def _handle_mfc_search(params: dict) -> str:
-    """Поиск ближайшего МФЦ."""
+    """Поиск ближайшего МФЦ по адресу."""
     from app.tools.city_tools_v2 import find_nearest_mfc_v2
 
     address = params.get('address', '')
@@ -517,33 +551,224 @@ def _handle_mfc_search(params: dict) -> str:
     if not address:
         return (
             'Для поиска ближайшего МФЦ укажите, пожалуйста, ваш адрес. '
-            'Например: "Найди МФЦ рядом с Невским проспектом 1"'
+            'Например: "Найди МФЦ рядом с Невским проспектом 1".'
         )
 
     return find_nearest_mfc_v2.invoke(address)
 
 
-def _handle_pensioner_categories() -> str:
-    """Получение категорий услуг для пенсионеров."""
-    from app.tools.city_tools_v2 import get_pensioner_categories_tool
+def _handle_polyclinic_by_address(params: dict) -> str:
+    """Поликлиники по адресу."""
+    from app.tools.city_tools_v2 import get_polyclinics_by_address_v2
 
-    return get_pensioner_categories_tool.invoke({})
+    address = params.get('address', '')
+
+    if not address:
+        return (
+            'Чтобы найти поликлинику по вашему адресу, укажите полный адрес. '
+            'Например: "Моя поликлиника по адресу Невский проспект 100".'
+        )
+
+    return get_polyclinics_by_address_v2.invoke(address)
+
+
+def _handle_schools_by_address(params: dict) -> str:
+    """Школы, прикреплённые к дому по адресу."""
+    from app.tools.city_tools_v2 import get_linked_schools_by_address_v2
+
+    address = params.get('address', '')
+
+    if not address:
+        return (
+            'Чтобы найти школы, прикреплённые к вашему дому, укажите адрес. '
+            'Например: "К какой школе прикреплён дом по адресу Ленинский проспект 50?".'
+        )
+
+    return get_linked_schools_by_address_v2.invoke(address)
+
+
+def _handle_management_company_by_address(params: dict) -> str:
+    """Управляющая компания по адресу дома."""
+    from app.tools.city_tools_v2 import get_management_company_by_address_v2
+
+    address = params.get('address', '')
+
+    if not address:
+        return (
+            'Чтобы узнать управляющую компанию, укажите адрес дома. '
+            'Например: "Какая УК у дома по адресу Проспект Ветеранов 75?".'
+        )
+
+    return get_management_company_by_address_v2.invoke(address)
+
+
+def _handle_district_info_by_address(params: dict) -> str:
+    """Справочная информация о районе по адресу."""
+    from app.tools.city_tools_v2 import get_district_info_by_address_v2
+
+    address = params.get('address', '')
+
+    if not address:
+        return (
+            'Чтобы получить информацию по району, укажите адрес. '
+            'Например: "Полезные телефоны для района по адресу Бухарестская 100".'
+        )
+
+    return get_district_info_by_address_v2.invoke(address)
+
+
+def _handle_disconnections_by_address(params: dict) -> str:
+    """Отключения воды/электричества по адресу."""
+    from app.tools.city_tools_v2 import get_disconnections_by_address_v2
+
+    address = params.get('address', '')
+
+    if not address:
+        return (
+            'Чтобы проверить отключения по вашему дому, укажите адрес. '
+            'Например: "Будут ли отключения воды по адресу Комендантский проспект 12?".'
+        )
+
+    return get_disconnections_by_address_v2.invoke(address)
+
+
+def _handle_mfc_list_by_district(params: dict) -> str:
+    """Список МФЦ в районе."""
+    from app.tools.city_tools_v2 import get_mfc_list_by_district_v2
+
+    district = params.get('district', '')
+
+    if not district:
+        return (
+            'Для получения списка МФЦ укажите район. '
+            'Например: "Список МФЦ в Невском районе".'
+        )
+
+    return get_mfc_list_by_district_v2.invoke(district)
+
+
+def _handle_kindergartens(params: dict) -> str:
+    """Детские сады в районе (по умолчанию возраст ~3 года)."""
+    from app.tools.city_tools_v2 import get_kindergartens_v2
+
+    district = params.get('district', '')
+
+    if not district:
+        return (
+            'Для поиска детских садов укажите район. '
+            'Например: "Детские сады в Приморском районе".'
+        )
+
+    # Пока используем дефолтный возраст 3 года
+    return get_kindergartens_v2.invoke({'district': district, 'age_years': 3, 'age_months': 0})
+
+
+def _handle_sport_events(params: dict) -> str:
+    """Спортивные мероприятия (опционально по району)."""
+    from app.tools.city_tools_v2 import get_sport_events_v2
+
+    district = params.get('district', '')
+    # Можно добавить фильтры (категория, ОВЗ, семейный час) через более умный парсинг
+    payload: dict[str, Any] = {}
+    if district:
+        payload['district'] = district
+
+    return get_sport_events_v2.invoke(payload or {})
+
+
+def _handle_sport_categories_by_district(params: dict) -> str:
+    """Виды спорта, доступные в районе."""
+    from app.tools.city_tools_v2 import get_sport_categories_by_district_v2
+
+    district = params.get('district', '')
+
+    if not district:
+        return (
+            'Чтобы узнать виды спорта в районе, укажите его. '
+            'Например: "Какие виды спорта есть в Калининском районе?".'
+        )
+
+    return get_sport_categories_by_district_v2.invoke(district)
+
+
+def _handle_sportgrounds_count(params: dict) -> str:
+    """Количество спортплощадок в городе или районе."""
+    from app.tools.city_tools_v2 import get_sportgrounds_count_v2
+
+    district = params.get('district', '')
+    return get_sportgrounds_count_v2.invoke({'district': district} if district else {})
+
+
+def _handle_sportgrounds(params: dict) -> str:
+    """Список спортплощадок (город/район)."""
+    from app.tools.city_tools_v2 import get_sportgrounds_v2
+
+    district = params.get('district', '')
+    # Пока не вытаскиваем виды спорта из текста
+    payload: dict[str, Any] = {
+        'district': district or '',
+        'sport_types': '',
+        'count': 10,
+    }
+    return get_sportgrounds_v2.invoke(payload)
+
+
+def _handle_districts_list() -> str:
+    """Список районов города."""
+    from app.tools.city_tools_v2 import get_districts_list
+
+    return get_districts_list.invoke({})
+
+
+def _handle_city_events() -> str:
+    """Городская афиша мероприятий (несколько дней вперёд)."""
+    from app.tools.city_tools_v2 import get_city_events_v2
+
+    # Дефолт: 7 дней вперёд, без фильтров
+    return get_city_events_v2.invoke({'days_ahead': 7, 'category': '', 'free_only': False, 'for_kids': False})
+
+
+def _handle_event_categories() -> str:
+    """Категории мероприятий в афише."""
+    from app.tools.city_tools_v2 import get_event_categories_v2
+
+    return get_event_categories_v2.invoke({})
+
+
+def _handle_memorable_dates_today() -> str:
+    """Памятные даты в истории города на сегодня."""
+    from app.tools.city_tools_v2 import get_memorable_dates_today_v2
+
+    return get_memorable_dates_today_v2.invoke({})
+
+
+def _handle_pensioner_categories() -> str:
+    """Категории услуг для пенсионеров (программа 'Долголетие')."""
+    from app.tools.city_tools_v2 import get_pensioner_service_categories_v2
+
+    return get_pensioner_service_categories_v2.invoke({})
 
 
 def _handle_pensioner_services(params: dict) -> str:
-    """Поиск услуг для пенсионеров."""
-    from app.tools.city_tools_v2 import get_pensioner_services_tool
+    """Поиск услуг для пенсионеров в районе."""
+    from app.tools.city_tools_v2 import get_pensioner_services_v2
 
     district = params.get('district', '')
 
     if not district:
         return (
             'Для поиска услуг для пенсионеров укажите район. '
-            'Например: "Какие занятия для пенсионеров есть в Невском районе?"'
+            'Например: "Какие занятия для пенсионеров есть в Невском районе?".'
         )
 
     # По умолчанию ищем все категории
-    return get_pensioner_services_tool.invoke({'district': district, 'categories': ''})
+    payload = {'district': district, 'category': ''}
+    return get_pensioner_services_v2.invoke(payload)
+
+
+# =============================================================================
+# RAG, conversation, generate_response — без изменений
+# =============================================================================
 
 
 def rag_search_node(state: SupervisorState) -> dict:
@@ -558,18 +783,16 @@ def rag_search_node(state: SupervisorState) -> dict:
     logger.info('supervisor_node', node='rag_search', query=query[:100])
 
     try:
-        # Используем существующий RAG Graph (без toxicity check, т.к. уже проверили)
         documents, metadata = search_with_graph(
             query=query,
             k=rag_config.search.k,
             min_relevant=rag_config.search.min_relevant,
-            use_toxicity_check=False,  # Уже проверили в supervisor
+            use_toxicity_check=False,
         )
 
         if not documents:
             result = 'К сожалению, не удалось найти информацию по вашему запросу в базе знаний.'
         else:
-            # Форматируем результаты
             result_parts = ['Вот что я нашёл по вашему запросу:\n']
             content_limit = rag_config.search.content_preview_limit
             for i, doc in enumerate(documents, 1):
@@ -617,17 +840,14 @@ def conversation_node(state: SupervisorState) -> dict:
 
     llm = get_llm_for_conversation()
 
-    # Формируем контекст с историей
     messages = []
 
-    # System prompt
     system_message = """Ты — дружелюбный городской помощник Санкт-Петербурга.
 Ты помогаешь жителям города с информацией о госуслугах, МФЦ и городских сервисах.
 Отвечай кратко, вежливо и по делу. Если не знаешь ответ — честно скажи об этом."""
 
     messages.append(HumanMessage(content=f'[SYSTEM] {system_message}'))
 
-    # Добавляем историю (последние N сообщений из конфига)
     context_size = agent_config.memory.context_window_size
     for msg in chat_history[-context_size:]:
         if isinstance(msg, BaseMessage):
@@ -635,7 +855,6 @@ def conversation_node(state: SupervisorState) -> dict:
         else:
             messages.append(HumanMessage(content=str(msg)))
 
-    # Текущий вопрос
     messages.append(HumanMessage(content=query))
 
     try:
@@ -655,15 +874,12 @@ def conversation_node(state: SupervisorState) -> dict:
 def generate_response_node(state: SupervisorState) -> dict:
     """
     Узел: Финальная генерация ответа.
-
-    Может использовать LLM для улучшения ответа или просто передать tool_result.
     """
     tool_result = state.get('tool_result') or ''
     intent = state.get('intent', '')
 
     logger.info('supervisor_node', node='generate_response', intent=intent)
 
-    # Защита от None
     if tool_result is None:
         tool_result = 'Извините, не удалось обработать запрос.'
 
@@ -686,11 +902,32 @@ def intent_router(state: SupervisorState) -> str:
     """Роутер по намерению пользователя."""
     intent = state.get('intent', Intent.UNKNOWN.value)
 
-    if intent in [
+    api_intents = {
+        # Адресные
         Intent.MFC_SEARCH.value,
+        Intent.POLYCLINIC_BY_ADDRESS.value,
+        Intent.SCHOOLS_BY_ADDRESS.value,
+        Intent.MANAGEMENT_COMPANY_BY_ADDRESS.value,
+        Intent.DISTRICT_INFO_BY_ADDRESS.value,
+        Intent.DISCONNECTIONS_BY_ADDRESS.value,
+        # Районы
+        Intent.MFC_LIST_BY_DISTRICT.value,
+        Intent.KINDERGARTENS.value,
+        Intent.SPORT_EVENTS.value,
+        Intent.SPORT_CATEGORIES_BY_DISTRICT.value,
+        Intent.SPORTGROUNDS.value,
+        Intent.SPORTGROUNDS_COUNT.value,
+        # Город
+        Intent.DISTRICTS_LIST.value,
+        Intent.CITY_EVENTS.value,
+        Intent.EVENT_CATEGORIES.value,
+        Intent.MEMORABLE_DATES_TODAY.value,
+        # Пенсионеры
         Intent.PENSIONER_CATEGORIES.value,
         Intent.PENSIONER_SERVICES.value,
-    ]:
+    }
+
+    if intent in api_intents:
         return 'api'
     elif intent == Intent.RAG_SEARCH.value:
         return 'rag'
@@ -720,13 +957,6 @@ def toxic_response_node(state: SupervisorState) -> dict:
 def create_supervisor_graph(checkpointer=None):
     """
     Создаёт Supervisor Graph.
-
-    Args:
-        checkpointer: Optional checkpointer для персистентности.
-                      Если None — граф работает in-memory.
-
-    Returns:
-        Скомпилированный граф
     """
     from app.agent.resilience import get_api_retry_policy, get_llm_retry_policy
 
@@ -734,23 +964,19 @@ def create_supervisor_graph(checkpointer=None):
 
     builder = StateGraph(SupervisorState)
 
-    # Retry policies для разных типов узлов
     llm_retry = get_llm_retry_policy()
     api_retry = get_api_retry_policy()
 
-    # Добавляем узлы с retry policies
-    builder.add_node('check_toxicity', check_toxicity_node)  # Без retry - локальная логика
-    builder.add_node('toxic_response', toxic_response_node)  # Без retry - просто возврат
-    builder.add_node('classify_intent', classify_intent_node, retry_policy=llm_retry)  # LLM вызов
-    builder.add_node('api_handler', api_handler_node, retry_policy=api_retry)  # Внешние API
-    builder.add_node('rag_search', rag_search_node, retry_policy=llm_retry)  # LLM + embeddings
-    builder.add_node('conversation', conversation_node, retry_policy=llm_retry)  # LLM вызов
-    builder.add_node('generate_response', generate_response_node)  # Без retry - форматирование
+    builder.add_node('check_toxicity', check_toxicity_node)
+    builder.add_node('toxic_response', toxic_response_node)
+    builder.add_node('classify_intent', classify_intent_node, retry_policy=llm_retry)
+    builder.add_node('api_handler', api_handler_node, retry_policy=api_retry)
+    builder.add_node('rag_search', rag_search_node, retry_policy=llm_retry)
+    builder.add_node('conversation', conversation_node, retry_policy=llm_retry)
+    builder.add_node('generate_response', generate_response_node)
 
-    # Рёбра
     builder.add_edge(START, 'check_toxicity')
 
-    # После toxicity check
     builder.add_conditional_edges(
         'check_toxicity',
         toxicity_router,
@@ -762,7 +988,6 @@ def create_supervisor_graph(checkpointer=None):
 
     builder.add_edge('toxic_response', END)
 
-    # После классификации intent
     builder.add_conditional_edges(
         'classify_intent',
         intent_router,
@@ -773,14 +998,12 @@ def create_supervisor_graph(checkpointer=None):
         },
     )
 
-    # Все обработчики идут к generate_response
     builder.add_edge('api_handler', 'generate_response')
     builder.add_edge('rag_search', 'generate_response')
     builder.add_edge('conversation', 'generate_response')
 
     builder.add_edge('generate_response', END)
 
-    # Компилируем с checkpointer если передан
     graph = builder.compile(checkpointer=checkpointer)
 
     logger.info(
@@ -796,19 +1019,12 @@ def create_supervisor_graph(checkpointer=None):
 # Convenience Functions
 # =============================================================================
 
-# Кэш для Supervisor Graph (по типу: in-memory / persistent)
 _supervisor_graph_cache: dict[str, object] = {}
 
 
 def get_supervisor_graph(with_persistence: bool = False):
     """
     Возвращает singleton Supervisor Graph.
-
-    Args:
-        with_persistence: Если True, создаёт граф с SqliteSaver для персистентности
-
-    Returns:
-        Скомпилированный граф
     """
     cache_key = 'persistent' if with_persistence else 'memory'
 
@@ -832,19 +1048,9 @@ def invoke_supervisor(
 ) -> tuple[str, dict]:
     """
     Вызывает Supervisor Graph.
-
-    Args:
-        query: Запрос пользователя
-        session_id: ID сессии (thread_id для checkpointer)
-        chat_history: История диалога (добавляется в messages)
-        with_persistence: Использовать персистентную память
-
-    Returns:
-        Кортеж (ответ, метаданные)
     """
     graph = get_supervisor_graph(with_persistence=with_persistence)
 
-    # Формируем messages: история + текущий запрос
     messages: list[BaseMessage] = []
     if chat_history:
         messages.extend(chat_history)
@@ -869,7 +1075,6 @@ def invoke_supervisor(
         with_persistence=with_persistence,
     )
 
-    # Если с персистентностью — передаём thread_id в config
     config = {'configurable': {'thread_id': session_id}} if with_persistence else {}
     result = graph.invoke(initial_state, config=config)
 
@@ -886,11 +1091,6 @@ def invoke_supervisor(
     return response, metadata
 
 
-# =============================================================================
-# CLI для тестирования
-# =============================================================================
-
-
 if __name__ == '__main__':
     import os
 
@@ -905,6 +1105,9 @@ if __name__ == '__main__':
         'Какие услуги есть для пенсионеров?',
         'Как получить загранпаспорт?',
         'Ты идиот!',  # токсичный
+        'Какая управляющая компания у дома по адресу Проспект Большевиков 68 к1?',
+        'Какие спортплощадки есть в Невском районе?',
+        'Памятные даты на сегодня',
         'Спасибо за помощь!',
     ]
 
@@ -919,5 +1122,5 @@ if __name__ == '__main__':
 
         response, meta = invoke_supervisor(query)
 
-        print(f'Intent: {meta.get("handler", "N/A")}')
+        print(f'Handler: {meta.get("handler", "N/A")}')
         print(f'Ответ: {response[:200]}{"..." if len(response) > 200 else ""}')
