@@ -181,7 +181,7 @@ async def demo_building_search(raw: bool = False) -> None:
     """
     Тесты поиска зданий — проверяем что building_id приходит корректно
     """
-    from app.api.yazzh_new import YazzhAsyncClient, AddressNotFoundError
+    from app.api.yazzh_new import AddressNotFoundError, YazzhAsyncClient
 
     print_separator('🏠 ТЕСТЫ ПОИСКА ЗДАНИЙ (Building Search)')
 
@@ -250,7 +250,9 @@ async def demo_building_search(raw: bool = False) -> None:
 
         try:
             results = await client.search_building(INVALID_ADDRESS)
-            console.print(f'[red]❌ ПРОБЛЕМА: Ожидали ошибку, но получили {len(results)} результатов[/red]')
+            console.print(
+                f'[red]❌ ПРОБЛЕМА: Ожидали ошибку, но получили {len(results)} результатов[/red]'
+            )
         except AddressNotFoundError as e:
             console.print(f'[green]✅ Корректно выбросил AddressNotFoundError: {e}[/green]')
         except Exception as e:
@@ -283,7 +285,9 @@ async def demo_districts(raw: bool = False) -> None:
                 if len(districts) >= 18:
                     console.print('[green]✅ Количество районов корректно (>= 18)[/green]')
                 else:
-                    console.print(f'[yellow]⚠️ Ожидали >= 18 районов, получили {len(districts)}[/yellow]')
+                    console.print(
+                        f'[yellow]⚠️ Ожидали >= 18 районов, получили {len(districts)}[/yellow]'
+                    )
 
                 # Проверяем известные районы
                 names = [d.name for d in districts]
@@ -354,7 +358,7 @@ async def demo_integration(raw: bool = False) -> None:
 
         try:
             building = await client.search_building_first(address)
-            console.print(f'[green]✅ Здание найдено[/green]')
+            console.print('[green]✅ Здание найдено[/green]')
             console.print(f'[cyan]   id: {building.id}[/cyan]')
             console.print(f'[cyan]   building_id: {building.building_id}[/cyan]')
             console.print(f'[cyan]   address: {building.full_address}[/cyan]')
@@ -407,7 +411,9 @@ async def demo_integration(raw: bool = False) -> None:
             try:
                 info = await client.get_district_info_by_building(bid)
                 if info:
-                    console.print(f'[green]✅ Районная информация получена (тип: {type(info).__name__})[/green]')
+                    console.print(
+                        f'[green]✅ Районная информация получена (тип: {type(info).__name__})[/green]'
+                    )
                 else:
                     console.print('[yellow]⚠️ Районная информация пуста[/yellow]')
             except Exception as e:
@@ -415,9 +421,13 @@ async def demo_integration(raw: bool = False) -> None:
 
             # Итог
             console.print()
-            found = sum([1 if mfc else 0, len(clinics) if clinics else 0, len(schools) if schools else 0])
+            found = sum(
+                [1 if mfc else 0, len(clinics) if clinics else 0, len(schools) if schools else 0]
+            )
             if found > 0:
-                console.print(f'[bold green]✅ Интеграция работает! Найдено сервисов: {found}[/bold green]')
+                console.print(
+                    f'[bold green]✅ Интеграция работает! Найдено сервисов: {found}[/bold green]'
+                )
             else:
                 console.print('[bold yellow]⚠️ Сервисы не привязаны к этому адресу[/bold yellow]')
 
@@ -434,7 +444,7 @@ async def demo_kindergartens(raw: bool = False) -> None:
     """
     Тесты для функций поиска детских садов
     """
-    from app.api.yazzh_new import YazzhAsyncClient  #, format_kindergartens_for_chat
+    from app.api.yazzh_new import YazzhAsyncClient  # , format_kindergartens_for_chat
 
     print_separator('🏒 ТЕСТЫ ДЕТСКИХ САДОВ (ДОУ)')
 
@@ -486,7 +496,7 @@ async def demo_events(raw: bool = False) -> None:
     """
     import pendulum
 
-    from app.api.yazzh_new import YazzhAsyncClient  #, format_events_for_chat
+    from app.api.yazzh_new import YazzhAsyncClient  # , format_events_for_chat
 
     print_separator('🎭 ТЕСТЫ АФИШИ (МЕРОПРИЯТИЯ)')
     async with YazzhAsyncClient() as client:
@@ -541,6 +551,126 @@ async def demo_events(raw: bool = False) -> None:
 
 
 # ============================================================================
+# Тесты для спортивных мероприятий
+# ============================================================================
+
+
+async def demo_sport_events(raw: bool = False) -> None:
+    """
+    Тесты для спортивных мероприятий
+    """
+    import pendulum
+
+    from app.api.yazzh_new import YazzhAsyncClient
+
+    print_separator('🏆 ТЕСТЫ СПОРТИВНЫХ МЕРОПРИЯТИЙ')
+    async with YazzhAsyncClient() as client:
+        now = pendulum.now('Europe/Moscow')
+        start_date = now.format('YYYY-MM-DD')
+        end_date = now.add(days=14).format('YYYY-MM-DD')
+
+        # Тест 1: Все спортивные мероприятия
+        params = {'start_date': start_date, 'end_date': end_date, 'count': 5}
+        print_input('get_sport_events (все на 14 дней)', **params)
+
+        try:
+            result = await client.get_sport_events(**params)
+            print_output('get_sport_events', result, raw=raw)
+
+            if not raw and result:
+                console.print(f'[green]✅ Найдено спортивных мероприятий: {len(result)}[/green]')
+        except Exception as e:
+            print_error('get_sport_events', e)
+
+        # Тест 2: Спорт в конкретном районе
+        params = {'district': 'Невский', 'count': 5}
+        print_input('get_sport_events (Невский район)', **params)
+
+        try:
+            result = await client.get_sport_events(**params)
+            print_output('get_sport_events (Невский)', result, raw=raw)
+        except Exception as e:
+            print_error('get_sport_events (Невский)', e)
+
+        # Тест 3: Для людей с ОВЗ
+        params = {'ovz': True, 'count': 5}
+        print_input('get_sport_events (для ОВЗ)', **params)
+
+        try:
+            result = await client.get_sport_events(**params)
+            print_output('get_sport_events (ОВЗ)', result, raw=raw)
+        except Exception as e:
+            print_error('get_sport_events (ОВЗ)', e)
+
+        # Тест 4: Категории спорта по району
+        district = 'Центральный'
+        print_input('get_sport_event_categories', district=district)
+
+        try:
+            categories = await client.get_sport_event_categories(district)
+            print_output('get_sport_event_categories', categories, raw=raw)
+
+            if not raw and categories:
+                console.print(f'[green]✅ Виды спорта в {district}: {len(categories)}[/green]')
+        except Exception as e:
+            print_error('get_sport_event_categories', e)
+
+
+# ============================================================================
+# Тесты для отключений
+# ============================================================================
+
+
+async def demo_disconnections(raw: bool = False) -> None:
+    """
+    Тесты для отключений воды/электричества.
+
+    ВАЖНО: API возвращает только текущие отключения. Если их нет — это хорошо!
+    204 статус = нет отключений по адресу.
+    """
+    from app.api.yazzh_new import YazzhAsyncClient
+
+    print_separator('⚠️ ТЕСТЫ ОТКЛЮЧЕНИЙ')
+
+    console.print('[dim]ℹ️  API возвращает только текущие отключения.[/dim]')
+    console.print('[dim]   Если все адреса показывают "нет отключений" — это нормально![/dim]')
+    console.print()
+
+    async with YazzhAsyncClient() as client:
+        # Тест адресов из разных районов
+        test_addresses = [
+            'Невский проспект 100',
+            'проспект Просвещения 50',
+            'Лиговский проспект 10',
+            'Московский проспект 200',
+            'проспект Ветеранов 75',
+        ]
+
+        found_any = False
+
+        for address in test_addresses:
+            print_input('get_disconnections_by_address', address=address)
+
+            try:
+                result = await client.get_disconnections_by_address(address)
+                print_output(f'get_disconnections ({address})', result, raw=raw)
+
+                if not raw:
+                    if result:
+                        console.print(f'[yellow]⚠️ Найдено отключений: {len(result)}[/yellow]')
+                        found_any = True
+                    else:
+                        console.print('[green]✅ Отключений нет[/green]')
+            except Exception as e:
+                print_error(f'get_disconnections ({address})', e)
+
+        if not found_any:
+            console.print()
+            console.print('[cyan]📊 Итог: По всем проверенным адресам отключений нет.[/cyan]')
+            console.print('[dim]   Это означает что API работает корректно![/dim]')
+
+
+# ============================================================================
 # Тесты для МФЦ
 # ============================================================================
 
@@ -549,7 +679,7 @@ async def demo_mfc(raw: bool = False) -> None:
     """
     Тесты для МФЦ
     """
-    from app.api.yazzh_new import YazzhAsyncClient  #, format_mfc_for_chat
+    from app.api.yazzh_new import YazzhAsyncClient  # , format_mfc_for_chat
 
     print_separator('🏢 ТЕСТЫ МФЦ')
 
@@ -600,7 +730,7 @@ async def demo_schools(raw: bool = False) -> None:
     """
     Тесты для школ
     """
-    from app.api.yazzh_new import YazzhAsyncClient  #, format_schools_for_chat
+    from app.api.yazzh_new import YazzhAsyncClient  # , format_schools_for_chat
 
     print_separator('🏫 ТЕСТЫ ШКОЛ')
 
@@ -877,7 +1007,7 @@ async def demo_polyclinics(raw: bool = False) -> None:
     """
     Тесты для поликлиник
     """
-    from app.api.yazzh_new import YazzhAsyncClient  #, format_polyclinics_for_chat
+    from app.api.yazzh_new import YazzhAsyncClient  # , format_polyclinics_for_chat
 
     print_separator('🏥 ТЕСТЫ ПОЛИКЛИНИК')
 
@@ -989,17 +1119,25 @@ def _print_done(fuzz: bool = False):
 
 @app.command()
 def demo(
-    buildings: Annotated[bool, typer.Option('--buildings', '-b', help='Тесты поиска зданий')] = False,
+    buildings: Annotated[
+        bool, typer.Option('--buildings', '-b', help='Тесты поиска зданий')
+    ] = False,
     districts: Annotated[bool, typer.Option('--districts', help='Тесты районов')] = False,
     dou: Annotated[bool, typer.Option('--dou', '-d', help='Тесты детских садов')] = False,
     afisha: Annotated[bool, typer.Option('--afisha', '-a', help='Тесты афиши')] = False,
+    sport: Annotated[bool, typer.Option('--sport', help='Тесты спортивных мероприятий')] = False,
+    disconnections: Annotated[
+        bool, typer.Option('--disconnections', '--disc', help='Тесты отключений')
+    ] = False,
     mfc: Annotated[bool, typer.Option('--mfc', '-m', help='Тесты МФЦ')] = False,
     schools: Annotated[bool, typer.Option('--schools', '-s', help='Тесты школ')] = False,
     polyclinics: Annotated[
         bool, typer.Option('--polyclinics', '-p', help='Тесты поликлиник')
     ] = False,
     uk: Annotated[bool, typer.Option('--uk', '-u', help='Тесты УК')] = False,
-    integration: Annotated[bool, typer.Option('--integration', '-i', help='Интеграционный тест')] = False,
+    integration: Annotated[
+        bool, typer.Option('--integration', '-i', help='Интеграционный тест')
+    ] = False,
     tools: Annotated[bool, typer.Option('--tools', '-t', help='Тесты LangChain tools')] = False,
     raw: Annotated[bool, typer.Option('--raw', '-r', help='Сырой JSON вывод')] = False,
 ):
@@ -1009,9 +1147,25 @@ def demo(
     Примеры:
         python -m tests.test_yazzh_rich demo --buildings
         python -m tests.test_yazzh_rich demo --schools --polyclinics
+        python -m tests.test_yazzh_rich demo --sport --disconnections
         python -m tests.test_yazzh_rich demo -b -s -p -i --raw
     """
-    if not any([buildings, districts, dou, afisha, mfc, schools, polyclinics, uk, integration, tools]):
+    if not any(
+        [
+            buildings,
+            districts,
+            dou,
+            afisha,
+            sport,
+            disconnections,
+            mfc,
+            schools,
+            polyclinics,
+            uk,
+            integration,
+            tools,
+        ]
+    ):
         console.print('[yellow]⚠️ Укажите хотя бы один флаг теста[/yellow]')
         console.print('[dim]Используйте --help для справки[/dim]')
         raise typer.Exit(1)
@@ -1026,6 +1180,10 @@ def demo(
             await demo_kindergartens(raw=raw)
         if afisha:
             await demo_events(raw=raw)
+        if sport:
+            await demo_sport_events(raw=raw)
+        if disconnections:
+            await demo_disconnections(raw=raw)
         if mfc:
             await demo_mfc(raw=raw)
         if schools:
@@ -1061,6 +1219,8 @@ def run_all(
         await demo_districts(raw=raw)
         await demo_kindergartens(raw=raw)
         await demo_events(raw=raw)
+        await demo_sport_events(raw=raw)
+        await demo_disconnections(raw=raw)
         await demo_mfc(raw=raw)
         await demo_schools(raw=raw)
         await demo_polyclinics(raw=raw)
@@ -1075,7 +1235,10 @@ def run_all(
 @app.command()
 def fuzz(
     targets: Annotated[
-        list[FuzzTarget], typer.Argument(help='Цели: buildings, schools, polyclinics, mfc, dou, uk, integration, all')
+        list[FuzzTarget],
+        typer.Argument(
+            help='Цели: buildings, schools, polyclinics, mfc, dou, uk, integration, all'
+        ),
     ],
     raw: Annotated[bool, typer.Option('--raw', '-r', help='Сырой JSON вывод')] = False,
 ):

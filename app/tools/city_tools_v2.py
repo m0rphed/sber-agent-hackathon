@@ -10,11 +10,14 @@ from collections.abc import Callable
 from functools import wraps
 import json
 
+import httpx
 from langchain_core.tools import tool
 import nest_asyncio
 
 from app.api.yazzh_new import (
+    API_UNAVAILABLE_MESSAGE,
     AddressNotFoundError,
+    ServiceUnavailableError,
     YazzhAsyncClient,
     format_building_search_for_chat,
     format_mfc_for_chat,
@@ -32,6 +35,23 @@ nest_asyncio.apply()
 # ============================================================================
 # Хелпер для запуска async функций в синхронном контексте
 # ============================================================================
+
+
+def run_async_with_error_handling(func: Callable):
+    """
+    Декоратор для запуска асинхронных функций в синхронном контексте.
+    Автоматически обрабатывает ServiceUnavailableError (502/504).
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return asyncio.run(func(*args, **kwargs))
+        except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+            logger.error('api_unavailable', func=func.__name__)
+            return API_UNAVAILABLE_MESSAGE
+
+    return wrapper
 
 
 def run_async(func: Callable):
@@ -79,7 +99,12 @@ def search_address_tool(query: str) -> str:
             except AddressNotFoundError:
                 return 'Адрес не найден. Пожалуйста, уточните запрос.'
 
-    result = asyncio.run(_search())
+    try:
+        result = asyncio.run(_search())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='search_address')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='search_address', result_preview=result[:100])
     return result
 
@@ -116,7 +141,12 @@ def find_nearest_mfc_v2(address: str) -> str:
             mfc = await client.get_nearest_mfc_by_address(address)
             return format_mfc_for_chat(mfc)
 
-    result = asyncio.run(_find_mfc())
+    try:
+        result = asyncio.run(_find_mfc())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='find_nearest_mfc_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info(
         'tool_result', tool='find_nearest_mfc_v2', result_preview=result[:100] if result else 'None'
     )
@@ -155,7 +185,12 @@ def get_mfc_list_by_district_v2(district: str) -> str:
                 lines.append('')
             return '\n'.join(lines)
 
-    result = asyncio.run(_get_mfc_list())
+    try:
+        result = asyncio.run(_get_mfc_list())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_mfc_list_by_district_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_mfc_list_by_district_v2', result_preview=result[:100])
     return result
 
@@ -189,7 +224,12 @@ def get_polyclinics_by_address_v2(address: str) -> str:
             clinics = await client.get_polyclinics_by_address(address)
             return format_polyclinics_for_chat(clinics)
 
-    result = asyncio.run(_get_polyclinics())
+    try:
+        result = asyncio.run(_get_polyclinics())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_polyclinics_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_polyclinics_by_address_v2', result_preview=result[:100])
     return result
 
@@ -223,7 +263,12 @@ def get_linked_schools_by_address_v2(address: str) -> str:
             schools = await client.get_linked_schools_by_address(address)
             return format_schools_for_chat(schools)
 
-    result = asyncio.run(_get_schools())
+    try:
+        result = asyncio.run(_get_schools())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_linked_schools_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_linked_schools_by_address_v2', result_preview=result[:100])
     return result
 
@@ -273,7 +318,12 @@ def get_management_company_by_address_v2(address: str) -> str:
                 lines.append(f'   ИНН: {uk.inn}')
             return '\n'.join(lines)
 
-    result = asyncio.run(_get_uk())
+    try:
+        result = asyncio.run(_get_uk())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_management_company_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info(
         'tool_result', tool='get_management_company_by_address_v2', result_preview=result[:100]
     )
@@ -312,7 +362,12 @@ def get_districts_list() -> str:
                 lines.append(f'• {d.name}')
             return '\n'.join(lines)
 
-    result = asyncio.run(_get_districts())
+    try:
+        result = asyncio.run(_get_districts())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_districts_list')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_districts_list', result_preview=result[:100])
     return result
 
@@ -371,7 +426,12 @@ def get_district_info_by_address_v2(address: str) -> str:
 
             return json.dumps(info, ensure_ascii=False, indent=2)
 
-    result = asyncio.run(_get_district_info())
+    try:
+        result = asyncio.run(_get_district_info())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_district_info_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_district_info_by_address_v2', result_preview=result[:100])
     return result
 
@@ -414,7 +474,12 @@ def get_kindergartens_v2(district: str, age_years: int = 3, age_months: int = 0)
             )
             return format_kindergartens_for_chat(kindergartens)
 
-    result = asyncio.run(_get_kindergartens())
+    try:
+        result = asyncio.run(_get_kindergartens())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_kindergartens_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_kindergartens_v2', result_preview=result[:100])
     return result
 
@@ -478,7 +543,12 @@ def get_city_events_v2(
             )
             return format_events_for_chat(events)
 
-    result = asyncio.run(_get_events())
+    try:
+        result = asyncio.run(_get_events())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_city_events_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_city_events_v2', result_preview=result[:100])
     return result
 
@@ -513,8 +583,168 @@ def get_event_categories_v2() -> str:
                 lines.append(f'• {cat} ({count} мероприятий)')
             return '\n'.join(lines)
 
-    result = asyncio.run(_get_categories())
+    try:
+        result = asyncio.run(_get_categories())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_event_categories_v2')
+        return API_UNAVAILABLE_MESSAGE
+
     logger.info('tool_result', tool='get_event_categories_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для отключений коммунальных услуг
+# ============================================================================
+
+
+@tool
+def get_disconnections_by_address_v2(address: str) -> str:
+    """
+    Проверить наличие отключений воды или электричества по адресу.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Когда отключат воду/горячую воду в моём доме?
+    - Будут ли отключения электричества по адресу [адрес]?
+    - Есть ли плановые отключения по моему адресу?
+    - Почему нет воды/света?
+
+    Args:
+        address: Адрес дома в Санкт-Петербурге (например: "Невский проспект 100")
+
+    Returns:
+        Информация об отключениях или сообщение что отключений нет
+    """
+    logger.info('tool_call', tool='get_disconnections_by_address_v2', address=address)
+
+    async def _get_disconnections():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_disconnections_for_chat
+
+            disconnections = await client.get_disconnections_by_address(address)
+            return format_disconnections_for_chat(disconnections)
+
+    try:
+        result = asyncio.run(_get_disconnections())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_disconnections_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_disconnections_by_address_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для спортивных мероприятий
+# ============================================================================
+
+
+@tool
+def get_sport_events_v2(
+    district: str = '',
+    days_ahead: int = 14,
+    category: str = '',
+    for_disabled: bool = False,
+    family_hour: bool = False,
+) -> str:
+    """
+    Найти спортивные мероприятия в Санкт-Петербурге.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие спортивные мероприятия будут в [район]?
+    - Соревнования по футболу/баскетболу/волейболу
+    - Спортивные события для людей с ОВЗ
+    - Семейные спортивные мероприятия
+    - Где позаниматься спортом?
+
+    Args:
+        district: Район города (например: "Невский", "Центральный"). Пустая строка = все районы.
+        days_ahead: На сколько дней вперёд искать (1-30)
+        category: Вид спорта (например: "Футбол", "Баскетбол", "Скандинавская ходьба")
+        for_disabled: Только мероприятия, доступные для людей с ОВЗ
+        family_hour: Только мероприятия программы "Семейный час"
+
+    Returns:
+        Список спортивных мероприятий с датами и адресами
+    """
+    logger.info(
+        'tool_call',
+        tool='get_sport_events_v2',
+        district=district,
+        days_ahead=days_ahead,
+        category=category,
+    )
+
+    async def _get_sport_events():
+        import pendulum
+
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_sport_events_for_chat
+
+            now = pendulum.now('Europe/Moscow')
+            start_date = now.format('YYYY-MM-DD')
+            end_date = now.add(days=days_ahead).format('YYYY-MM-DD')
+
+            events = await client.get_sport_events(
+                district=district if district else None,
+                categoria=category if category else None,
+                start_date=start_date,
+                end_date=end_date,
+                ovz=True if for_disabled else None,
+                family_hour=True if family_hour else None,
+                count=10,
+            )
+            return format_sport_events_for_chat(events)
+
+    try:
+        result = asyncio.run(_get_sport_events())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sport_events_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_sport_events_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_sport_categories_by_district_v2(district: str) -> str:
+    """
+    Получить список видов спорта, доступных в районе.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие виды спорта есть в [район]?
+    - Каким спортом можно заняться в Невском районе?
+    - Что из спорта проводится в моём районе?
+
+    Args:
+        district: Название района (например: "Невский", "Центральный")
+
+    Returns:
+        Список видов спорта, по которым проводятся мероприятия в районе
+    """
+    logger.info('tool_call', tool='get_sport_categories_by_district_v2', district=district)
+
+    async def _get_categories():
+        async with YazzhAsyncClient() as client:
+            categories = await client.get_sport_event_categories(district)
+
+            if not categories:
+                return f"Информация о видах спорта в районе '{district}' не найдена."
+
+            lines = [f'🏅 Виды спорта в {district} районе:\n']
+            for cat in sorted(categories):
+                lines.append(f'• {cat}')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_categories())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sport_categories_by_district_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info(
+        'tool_result', tool='get_sport_categories_by_district_v2', result_preview=result[:100]
+    )
     return result
 
 
@@ -536,4 +766,8 @@ city_tools_v2 = [
     get_kindergartens_v2,
     get_city_events_v2,
     get_event_categories_v2,
+    # Отключения и спорт
+    get_disconnections_by_address_v2,
+    get_sport_events_v2,
+    get_sport_categories_by_district_v2,
 ]
