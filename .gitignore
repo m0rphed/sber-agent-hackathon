@@ -231,3 +231,9 @@ data/test_data/
 .streamlit/secrets.toml
 data/parsed_docs/
 data/chroma_db/
+
+.langgraph_api/
+
+app/knowledge_base_md/
+app/rag/life_situations_md/
+data/index_metadata.json
