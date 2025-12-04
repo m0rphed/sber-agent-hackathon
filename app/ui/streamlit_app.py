@@ -1,28 +1,54 @@
 """
-Streamlit UI для агента городского помощника
+Streamlit UI для агента городского помощника.
+
+Использует LangGraph Server API через agent_sdk.
 """
 
+import os
 from pathlib import Path
 import sys
 import uuid
 
-from langgraph.graph.state import CompiledStateGraph
+import pendulum
 import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
 
 # добавляем корень проекта в путь для импортов
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-# print(f'Добавление в sys.path: {Path(__file__).parent.parent}')
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.agent.supervisor import get_supervisor_graph, invoke_supervisor  # noqa: E402
-from app.agent.persistent_memory import (  # noqa: E402
-    clear_chat_history,
-    get_chat_history,
-    messages_to_ui_format,
+# Импортируем SDK функции
+from agent_sdk.langgraph_functions_ui import (  # noqa: E402
+    chat_sync,
+    check_server_available,
+    clear_thread_history,
+    get_available_graphs,
+    get_thread_history,
+    stream_chat_with_status,
 )
 from app.storage.user_data import get_user_storage  # noqa: E402
+
+# Проверяем доступность LangGraph Server
+USE_LANGGRAPH_SERVER = os.getenv('USE_LANGGRAPH_SERVER', 'false').lower() == 'true'
+
+# Проверяем реальную доступность сервера при старте
+if USE_LANGGRAPH_SERVER:
+    try:
+        LANGGRAPH_SERVER_AVAILABLE = check_server_available()
+    except Exception:
+        LANGGRAPH_SERVER_AVAILABLE = False
+else:
+    LANGGRAPH_SERVER_AVAILABLE = False
+
+# fallback на прямой вызов если сервер недоступен
+if not LANGGRAPH_SERVER_AVAILABLE:
+    from app.agent.persistent_memory import (  # noqa: E402
+        clear_chat_history,
+        get_chat_history,
+        messages_to_ui_format,
+    )
+    from app.agent.supervisor import get_supervisor_graph, invoke_supervisor  # noqa: E402
 
 # конфигурация страницы
 
@@ -94,7 +120,7 @@ def simple_auth() -> bool:
         if 'user_id' not in st.session_state:
             _random_id = uuid.uuid4().hex[:8]
             st.session_state.user_id = f'anon_{_random_id}'
-            st.session_state.username = 'Гость'
+            st.session_state.display_name = 'Гость'
         return True
 
     # загружаем конфиг аутентификации
@@ -118,8 +144,10 @@ def simple_auth() -> bool:
     # проверяем статус до показа формы
     if st.session_state.get('authentication_status'):
         # успешная авторизация - не показываем форму
+        # ВАЖНО: используем 'username' от authenticator как user_id (это логин)
+        # и сохраняем 'name' в отдельную переменную для отображения
         st.session_state.user_id = st.session_state.get('username', 'unknown')
-        st.session_state.username = st.session_state.get('name', 'Пользователь')
+        st.session_state.display_name = st.session_state.get('name', 'Пользователь')
         return True
 
     # показываем header для страницы входа
@@ -200,9 +228,9 @@ def init_session_state() -> None:
     if 'current_chat_id' not in st.session_state:
         st.session_state.current_chat_id = None
 
-    # загружаем чаты из SQLite при первом входе
+    # загружаем чаты из SQLite при первом входе (только для зарегистрированных)
     user_id = st.session_state.get('user_id', 'anon')
-    if not st.session_state.chats_loaded and user_id != 'anon':
+    if not st.session_state.chats_loaded and user_id != 'anon' and not user_id.startswith('anon_'):
         _load_user_chats_from_db(user_id)
         st.session_state.chats_loaded = True
 
@@ -214,15 +242,14 @@ def init_session_state() -> None:
     chat_id = st.session_state.get('current_chat_id', 'default')
     st.session_state.session_id = f'{user_id}_{chat_id}'
 
-    # инициализируем Supervisor Graph сразу если ещё не создан
-    if st.session_state.agent is None:
+    # инициализируем агент только для fallback режима
+    if not LANGGRAPH_SERVER_AVAILABLE and st.session_state.agent is None:
         try:
-            # используем persistence=True для сохранения истории в SQLite
             st.session_state.agent = get_supervisor_graph(with_persistence=True)
         except Exception as e:
             st.error(f'Ошибка инициализации агента: {e}')
 
-    # загружаем историю сообщений из персистентного хранилища
+    # загружаем историю сообщений
     if not st.session_state.messages and st.session_state.session_id:
         _load_messages_from_persistent_storage()
 
@@ -243,46 +270,65 @@ def _load_user_chats_from_db(user_id: str) -> None:
 
 def _load_messages_from_persistent_storage() -> None:
     """
-    Загружает сообщения из персистентного хранилища (SqliteSaver)
+    Загружает сообщения из хранилища.
+
+    Использует LangGraph Server API если доступен, иначе локальный SqliteSaver.
     """
     thread_id = st.session_state.get('session_id')
     if not thread_id:
         return
 
-    # получаем историю из SqliteSaver
-    messages = get_chat_history(thread_id)
-    # конвертируем в формат UI
-    st.session_state.messages = messages_to_ui_format(messages)
+    if LANGGRAPH_SERVER_AVAILABLE:
+        # Загружаем через LangGraph Server API
+        st.session_state.messages = get_thread_history(thread_id)
+    else:
+        # Fallback: локальный SqliteSaver
+        messages = get_chat_history(thread_id)
+        st.session_state.messages = messages_to_ui_format(messages)
 
 
-def _create_new_chat() -> str:
+def _create_new_chat(skip_history_load: bool = True) -> str:
     """
-    Создаёт новый чат и возвращает его ID
+    Создаёт новый чат и возвращает его ID.
+
+    Args:
+        skip_history_load: Пропустить загрузку истории (для нового чата не нужна)
     """
     user_id = st.session_state.get('user_id', 'anon')
     chat_id = uuid.uuid4().hex[:8]
-    chat_num = len(st.session_state.user_chats) + 1
-    title = f'Чат {chat_num}'
 
-    # сохраняем в SQLite (для зарегистрированных пользователей)
+    # формируем название с датой и временем: "(20 декабря 2025) Чат 15:42"
+    now = pendulum.now('Europe/Moscow')
+    # pendulum поддерживает русскую локаль
+    date_str = now.format('D MMMM YYYY', locale='ru')
+    time_str = now.format('HH:mm')
+    title = f'({date_str}) Чат {time_str}'
+
+    # сохраняем в SQLite (только для зарегистрированных пользователей)
     if user_id != 'anon' and not user_id.startswith('anon_'):
         storage = get_user_storage()
-        chat_info = storage.create_chat(user_id, chat_id, title)
-        st.session_state.user_chats.insert(0, chat_info.to_dict())  # новые сверху
+        try:
+            chat_info = storage.create_chat(user_id, chat_id, title)
+            st.session_state.user_chats.insert(0, chat_info.to_dict())  # новые сверху
+        except Exception:
+            pass  # fallback ниже
     else:
-        from datetime import datetime
-
+        # для анонимных - только в session_state (не сохраняется при обновлении)
         st.session_state.user_chats.insert(
             0,
             {
                 'id': chat_id,
                 'title': title,
-                'created_at': datetime.now().isoformat(),
+                'created_at': now.to_iso8601_string(),
             },
         )
 
     st.session_state.current_chat_id = chat_id
+    # новый чат — история пустая, не нужно загружать
     st.session_state.messages = []
+
+    # обновляем session_id
+    st.session_state.session_id = f'{user_id}_{chat_id}'
 
     return chat_id
 
@@ -293,24 +339,30 @@ def _delete_chat(chat_id: str) -> None:
     """
     user_id = st.session_state.get('user_id', 'anon')
 
-    # удаляем из SQLite (user_data.db)
+    # удаляем из SQLite (user_data.db) только для зарегистрированных
     if user_id != 'anon' and not user_id.startswith('anon_'):
         storage = get_user_storage()
-        storage.delete_chat(user_id, chat_id)
+        try:
+            storage.delete_chat(user_id, chat_id)
+        except Exception:
+            pass  # игнорируем если чат не найден в БД
 
     # удаляем из session_state
     st.session_state.user_chats = [c for c in st.session_state.user_chats if c['id'] != chat_id]
 
-    # очищаем историю из персистентного хранилища (memory.db)
+    # очищаем историю
     thread_id = f'{user_id}_{chat_id}'
-    clear_chat_history(thread_id)
+    if LANGGRAPH_SERVER_AVAILABLE:
+        clear_thread_history(thread_id)
+    else:
+        clear_chat_history(thread_id)
 
     # если удалили текущий чат - переключаемся
     if st.session_state.current_chat_id == chat_id:
         if st.session_state.user_chats:
             _switch_chat(st.session_state.user_chats[0]['id'])
         else:
-            _create_new_chat()
+            _create_new_chat(skip_history_load=True)
 
 
 def _switch_chat(chat_id: str) -> None:
@@ -324,23 +376,26 @@ def _switch_chat(chat_id: str) -> None:
     user_id = st.session_state.get('user_id', 'anon')
     st.session_state.session_id = f'{user_id}_{chat_id}'
 
-    # загружаем сообщения из персистентного хранилища (SqliteSaver)
+    # загружаем сообщения
     _load_messages_from_persistent_storage()
 
 
-def get_agent() -> CompiledStateGraph | None:
+def get_agent():
     """
-    Возвращает или создаёт экземпляр Supervisor Graph
+    Возвращает агент для fallback режима.
+
+    Используется только когда LangGraph Server недоступен.
     """
-    if st.session_state.agent is None:
-        with st.spinner('🔄 Инициализация агента...'):
-            try:
-                # используем persistence=True для сохранения истории в SQLite
-                st.session_state.agent = get_supervisor_graph(with_persistence=True)
-            except Exception as e:
-                st.error(f'Ошибка инициализации агента: {e}')
-                return None
-    return st.session_state.agent
+    if not LANGGRAPH_SERVER_AVAILABLE:
+        if st.session_state.agent is None:
+            with st.spinner('🔄 Инициализация агента...'):
+                try:
+                    st.session_state.agent = get_supervisor_graph(with_persistence=True)
+                except Exception as e:
+                    st.error(f'Ошибка инициализации агента: {e}')
+                    return None
+        return st.session_state.agent
+    return None  # В режиме LangGraph Server агент не нужен
 
 
 # компоненты UI
@@ -369,8 +424,8 @@ def render_sidebar():
         st.markdown('### ⚙️ Настройки')
 
         # информация о пользователе
-        username = st.session_state.get('username', 'Гость')
-        st.markdown(f'👤 **{username}**')
+        display_name = st.session_state.get('display_name', st.session_state.get('name', 'Гость'))
+        st.markdown(f'👤 **{display_name}**')
 
         # кнопка выхода (только для авторизованных)
         if st.session_state.get('authentication_status'):
@@ -384,8 +439,8 @@ def render_sidebar():
         st.markdown('### 💬 Чаты')
 
         # кнопка нового чата
-        if st.button('➕ Новый чат', use_container_width=True):
-            _create_new_chat()
+        if st.button('➕ Новый чат', use_container_width=True, key='new_chat_btn'):
+            _create_new_chat(skip_history_load=True)
             st.rerun()
 
         # список чатов пользователя с кнопками удаления
@@ -415,10 +470,13 @@ def render_sidebar():
         st.divider()
 
         # кнопка очистки текущего чата
-        if st.button('🧹 Очистить текущий чат', use_container_width=True):
+        if st.button('🧹 Очистить текущий чат', use_container_width=True, key='clear_chat_btn'):
             st.session_state.messages = []
-            # очищаем историю из персистентного хранилища
-            clear_chat_history(st.session_state.session_id)
+            # очищаем историю
+            if LANGGRAPH_SERVER_AVAILABLE:
+                clear_thread_history(st.session_state.session_id)
+            else:
+                clear_chat_history(st.session_state.session_id)
             st.rerun()
 
         st.divider()
@@ -439,8 +497,13 @@ def render_sidebar():
 
         # статус системы
         st.markdown('### 📊 Статус')
-        agent_status = '🟢 Активен' if st.session_state.agent else '🟡 Не инициализирован'
-        st.markdown(f'Агент: {agent_status}')
+        if LANGGRAPH_SERVER_AVAILABLE:
+            st.markdown('Сервер: 🟢 LangGraph API')
+            st.markdown('Режим: 🚀 Streaming')
+        else:
+            agent_status = '🟢 Активен' if st.session_state.agent else '🟡 Ожидание'
+            st.markdown(f'Агент: {agent_status}')
+            st.markdown('Режим: 📦 Локальный')
         st.markdown(f'Чатов: {len(st.session_state.user_chats)}')
 
 
@@ -480,12 +543,7 @@ def render_chat_messages():
 
 def process_user_input(user_input: str) -> str:
     """
-    Обрабатывает ввод пользователя и возвращает ответ через Supervisor Graph.
-
-    Supervisor автоматически:
-    - Проверяет токсичность
-    - Классифицирует intent
-    - Маршрутизирует на нужный обработчик (API/RAG/Conversation)
+    Обрабатывает ввод пользователя через LangGraph Server или локальный агент.
 
     Args:
         user_input: Сообщение пользователя
@@ -493,27 +551,92 @@ def process_user_input(user_input: str) -> str:
     Returns:
         Ответ агента
     """
-    # Проверяем что граф инициализирован
-    agent = get_agent()
-    if agent is None:
-        return '❌ Агент не инициализирован. Проверьте настройки.'
+    if LANGGRAPH_SERVER_AVAILABLE:
+        # Используем LangGraph Server API (синхронный вызов без streaming)
+        try:
+            return chat_sync(
+                user_chat_id=st.session_state.session_id,
+                message=user_input,
+                agent_graph_id='supervisor',
+            )
+        except Exception as e:
+            return f'❌ Ошибка LangGraph Server: {e}'
+    else:
+        # fallback: локальный вызов
+        agent = get_agent()
+        if agent is None:
+            return '❌ Агент не инициализирован. Проверьте настройки.'
+
+        try:
+            response, metadata = invoke_supervisor(
+                query=user_input,
+                session_id=st.session_state.session_id,
+                with_persistence=True,
+            )
+            return response
+        except Exception as e:
+            return f'❌ Ошибка при обработке запроса: {e}'
+
+
+def process_user_input_streaming(user_input: str, message_placeholder) -> str:
+    """
+    Streaming версия обработки ввода через LangGraph Server.
+
+    Показывает ответ по мере генерации токенов.
+
+    Args:
+        user_input: Сообщение пользователя
+        message_placeholder: st.empty() placeholder для обновления
+
+    Returns:
+        Полный ответ агента
+    """
+    if not LANGGRAPH_SERVER_AVAILABLE:
+        # fallback на обычный вызов
+        return process_user_input(user_input)
 
     try:
-        # Вызываем Supervisor Graph напрямую через invoke_supervisor
-        response, metadata = invoke_supervisor(
-            query=user_input,
-            session_id=st.session_state.session_id,
-            with_persistence=True,  # используем SqliteSaver для персистентной памяти
-        )
+        full_response = ''
+        error_occurred = False
 
-        # Логируем метаданные для отладки (можно убрать позже)
-        if metadata.get('toxicity_blocked'):
-            # Сообщение было заблокировано фильтром токсичности
-            pass  # response уже содержит правильный ответ
+        for event in stream_chat_with_status(
+            user_chat_id=st.session_state.session_id,
+            message=user_input,
+            agent_graph_id='supervisor',
+        ):
+            event_type = event.get('type', '')
+            content = event.get('content', '')
 
-        return response
+            if event_type == 'status':
+                # показываем статус
+                message_placeholder.markdown(f'*{content}*')
+
+            elif event_type == 'token':
+                # добавляем токен к ответу
+                full_response += content
+                # показываем с курсором
+                message_placeholder.markdown(full_response + '▌')
+
+            elif event_type == 'error':
+                error_occurred = True
+                full_response = f'❌ Ошибка: {content}'
+                message_placeholder.markdown(full_response)
+                break
+
+            elif event_type == 'complete':
+                # финальный ответ готов
+                message_placeholder.markdown(full_response)
+
+        if not error_occurred and not full_response:
+            full_response = '❌ Пустой ответ от сервера'
+            message_placeholder.markdown(full_response)
+
+        return full_response
+
     except Exception as e:
-        return f'❌ Ошибка при обработке запроса: {e}'
+        error_msg = f'❌ Ошибка streaming: {e}'
+        message_placeholder.markdown(error_msg)
+        return error_msg
 
 
 # основное приложение
@@ -564,9 +687,15 @@ def main():
 
         # получаем и показываем ответ
         with st.chat_message('assistant'):
-            with st.spinner('🤔 Думаю...'):
-                response = process_user_input(input_to_process)
-            st.markdown(response)
+            if LANGGRAPH_SERVER_AVAILABLE:
+                # Streaming режим через LangGraph Server API
+                message_placeholder = st.empty()
+                response = process_user_input_streaming(input_to_process, message_placeholder)
+            else:
+                # Локальный режим — ждём полный ответ
+                with st.spinner('🤔 Думаю...'):
+                    response = process_user_input(input_to_process)
+                st.markdown(response)
 
         # сохраняем ответ
         st.session_state.messages.append(
@@ -576,7 +705,8 @@ def main():
             }
         )
 
-        st.rerun()
+        # не делаем rerun — сообщения уже отображены,
+        # rerun вызывает мерцание всего UI
 
 
 if __name__ == '__main__':

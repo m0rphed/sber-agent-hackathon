@@ -20,7 +20,7 @@ from typing import Any
 import structlog
 from structlog.typing import Processor
 
-# Определяем режим работы из переменных окружения
+# определяем режим работы из переменных окружения
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 LOG_FORMAT = os.getenv('LOG_FORMAT', 'console')  # "console" | "json"
 IS_DEBUG = LOG_LEVEL == 'DEBUG' or os.getenv('DEBUG', 'false').lower() == 'true'
@@ -58,7 +58,9 @@ def _order_keys(
 
 
 def _get_console_processors() -> list[Processor]:
-    """Процессоры для красивого вывода в консоль (dev режим)."""
+    """
+    Процессоры для красивого вывода в консоль (dev режим)
+    """
     return [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -82,7 +84,9 @@ def _get_console_processors() -> list[Processor]:
 
 
 def _get_json_processors() -> list[Processor]:
-    """Процессоры для JSON-вывода (production режим)."""
+    """
+    Процессоры для JSON-вывода (production режим)
+    """
     return [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -96,19 +100,21 @@ def _get_json_processors() -> list[Processor]:
 
 
 def _configure_stdlib_logging() -> None:
-    """Настройка стандартного logging для интеграции с structlog."""
-    # Определяем уровень
+    """
+    Настройка стандартного logging для интеграции с structlog
+    """
+    # определяем уровень
     level = getattr(logging, LOG_LEVEL, logging.INFO)
 
-    # Отключаем стандартные handlers
+    # отключаем стандартные handlers
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
-    # Создаём handler для вывода
+    # создаём handler для вывода
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(level)
 
-    # Устанавливаем базовую конфигурацию
+    # устанавливаем базовую конфигурацию
     logging.basicConfig(
         format='%(message)s',
         level=level,
@@ -116,7 +122,7 @@ def _configure_stdlib_logging() -> None:
         force=True,
     )
 
-    # Понижаем уровень для шумных библиотек
+    # понижаем уровень для шумных библиотек
     noisy_loggers = [
         'httpx',
         'httpcore',
@@ -131,8 +137,7 @@ def _configure_stdlib_logging() -> None:
 def configure_logging() -> None:
     """
     Инициализирует структурированное логирование.
-
-    Вызывается один раз при старте приложения.
+    Вызывается один раз при старте приложения
 
     Режимы:
     - LOG_FORMAT=console (по умолчанию): красивый вывод для разработки
@@ -140,7 +145,7 @@ def configure_logging() -> None:
     """
     _configure_stdlib_logging()
 
-    # Выбираем процессоры в зависимости от режима
+    # выбираем процессоры в зависимости от режима
     # JSON-формат имеет приоритет если явно указан
     if LOG_FORMAT == 'json':
         processors = _get_json_processors()
@@ -160,7 +165,7 @@ def configure_logging() -> None:
 
 def get_logger(name: str | None = None) -> structlog.BoundLogger:
     """
-    Получает настроенный logger.
+    Получает настроенный logger
 
     Args:
         name: Имя модуля (обычно __name__)
@@ -178,7 +183,7 @@ def get_logger(name: str | None = None) -> structlog.BoundLogger:
 
 def bind_context(**kwargs: Any) -> None:
     """
-    Привязывает контекст ко всем последующим сообщениям в текущем потоке.
+    Привязывает контекст ко всем последующим сообщениям в текущем потоке
 
     Args:
         **kwargs: Контекстные переменные
@@ -191,9 +196,11 @@ def bind_context(**kwargs: Any) -> None:
 
 
 def clear_context() -> None:
-    """Очищает привязанный контекст."""
+    """
+    Очищает привязанный контекст
+    """
     structlog.contextvars.clear_contextvars()
 
 
-# Автоматически настраиваем при импорте
+# автоматически настраиваем при импорте
 configure_logging()

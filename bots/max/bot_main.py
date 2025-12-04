@@ -1,36 +1,49 @@
 import asyncio
-import logging
-import os
 
-from dotenv import load_dotenv
-from langgraph_func import chat_with_agent
 from maxapi import Bot, Dispatcher
+from maxapi.enums.parse_mode import ParseMode
 from maxapi.filters import F
-from maxapi.types import MessageCreated
+from maxapi.types import Command, MessageCreated
+from maxapi.types.updates import BotStarted
 import rich
 
-load_dotenv()
+from agent_sdk.langgraph_functions import chat_with_agent
+from bots.max.config import LOG_LEVEL, TOKEN_MAX
 
-logging.basicConfig(level=logging.INFO)
+if not TOKEN_MAX:
+    raise ValueError('TOKEN_MAX environment variable is not set.')
 
-bot = Bot(os.getenv('TOKEN_MAX'))
+bot = Bot(TOKEN_MAX)
 dp = Dispatcher()
 
-@dp.bot_started()
-async def bot_started(event):
-    await event.bot.send_message(
-        chat_id=event.chat_id,
-        text='Привет! Отправь мне /start'
-    )
 
+# присылает сообщение при создании чата с ботом
+@dp.bot_started()
+async def bot_started(event: BotStarted):
+    await event.bot.send_message(chat_id=event.chat_id, text='Привет! Отправь мне /start')
+
+
+# ответ бота на команду /start
+# TODO: изменить приветственное сообщение на список того что умеет бот - должен получать это от агента
+@dp.message_created(Command('start'))
+async def start(event: MessageCreated):
+    await event.message.answer('Это чат-бот ИИ помощника для г. Санкт-Петербург! Чем могу помочь?')
+
+
+# перехватывает любые сообщения с текстом
 @dp.message_created(F.message.body.text)
-async def echo(event: MessageCreated):
-    result = await chat_with_agent(event.chat.chat_id, event.message.body.text)
-    rich.print(result)
-    print('-----------------------------')
-    print(f"ОТВЕТ: {result}")
-    print('-----------------------------')
-    await event.message.answer(f"ОТВЕТ: {result}")
+async def respond_every_msg(event: MessageCreated):
+    agent_response = await chat_with_agent(event.chat.chat_id, event.message.body.text)
+    if LOG_LEVEL == 'DEBUG':
+        rich.print(f'[yellow]Agent response:[/yellow] {agent_response}')
+
+    if not agent_response:
+        agent_response = 'Извините, я не смог найти ответ на ваш запрос.'
+
+    await event.message.answer(
+        f'*Ответ помощника*:\n\n{agent_response}',
+        # parse_mode=ParseMode.MARKDOWN,
+    )
 
 
 async def main():
