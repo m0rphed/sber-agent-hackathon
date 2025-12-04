@@ -125,8 +125,8 @@ def get_pensioner_services_tool(district: str, categories: str) -> str:
 
 
 # список всех доступных инструментов
-ALL_TOOLS = [
-    find_nearest_mfc_tool,
-    get_pensioner_categories_tool,
-    get_pensioner_services_tool,
-]
+# ALL_TOOLS = [
+#     find_nearest_mfc_tool,
+#     get_pensioner_categories_tool,
+#     get_pensioner_services_tool,
+# ]

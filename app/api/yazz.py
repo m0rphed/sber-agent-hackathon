@@ -1200,7 +1200,7 @@ class CityAppClient:
             return filtered
 
         return data
-    
+
         # ---------------- Плановые работы (ГАТИ) -----------------
 
     def get_gati_orders_map(self, params: dict[str, str | int] | None = None):

@@ -1014,3 +1014,5 @@ city_tools_v2 = [
     get_sportgrounds_count_v2,
     get_sportgrounds_v2,
 ]
+
+ALL_TOOLS = city_tools_v2

@@ -17,7 +17,7 @@ logging.basicConfig(
 
 # debug для LangChain - чтобы видеть вызовы tools
 logging.getLogger('langchain').setLevel(logging.DEBUG)
-logging.getLogger('app.tools.city_tools').setLevel(logging.INFO)
+logging.getLogger('app.tools.city_tools_v2').setLevel(logging.INFO)
 
 
 def print_messages_with_tool_content(result: dict):

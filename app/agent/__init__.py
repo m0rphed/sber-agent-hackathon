@@ -57,7 +57,7 @@ from app.agent.resilience import (
     get_llm_with_timeout,
     should_retry_exception,
 )
-from app.agent.supervisor import (
+from app.agent.supervisor_matvey import (
     Intent,
     SupervisorState,
     create_supervisor_graph,

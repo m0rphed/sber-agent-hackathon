@@ -191,7 +191,7 @@ def tool_agent_node(state: HybridState) -> dict:
     запросов, требующих вызова API (МФЦ, пенсионеры и т.д.)
     """
     from app.agent.llm import get_llm_for_tools
-    from app.tools.city_tools import ALL_TOOLS as API_TOOLS
+    from app.tools.city_tools_v2 import ALL_TOOLS as API_TOOLS
 
     agent_config = get_agent_config()
     query = get_last_user_message(state)

@@ -2,11 +2,11 @@
 LangChain Tools для городского помощника
 """
 
-from app.tools.city_tools import (
+from app.tools.city_tools_v2 import (
     ALL_TOOLS as CITY_TOOLS,
-    find_nearest_mfc_tool,
-    get_pensioner_categories_tool,
-    get_pensioner_services_tool,
+    # find_nearest_mfc_v2,
+    # get_pensioner_service_categories_v2,
+    # get_pensioner_services_tool_v2,
 )
 from app.tools.rag_tools import RAG_TOOLS, search_city_services
 
