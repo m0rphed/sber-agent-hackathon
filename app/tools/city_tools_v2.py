@@ -986,6 +986,210 @@ def get_sportgrounds_v2(
 
 
 # ============================================================================
+# Tier 2: Дорожные работы, школы, ветклиники, парки для питомцев
+# ============================================================================
+
+
+@tool
+def get_road_works_v2(
+    district: str | None = None,
+    address: str | None = None,
+    count: int = 10,
+) -> str:
+    """Получить информацию о дорожных работах ГАТИ в Санкт-Петербурге.
+
+    Возвращает список конкретных дорожных работ: где, какие, когда.
+    Можно искать по району или рядом с адресом.
+
+    Args:
+        district: Название района (опционально). Примеры: "Невский", "Центральный"
+        address: Адрес для поиска рядом (опционально). Примеры: "Невский проспект 10"
+        count: Количество результатов (по умолчанию 10)
+
+    Returns:
+        Список дорожных работ с адресами, типами работ и сроками
+    """
+    from app.api.yazzh_new import (
+        format_road_works_list_for_chat,
+    )
+
+    logger.info(
+        'tool_called', tool='get_road_works_v2', district=district, address=address, count=count
+    )
+
+    async def _get_road_works() -> str:
+        async with YazzhAsyncClient() as client:
+            if address:
+                # Поиск рядом с адресом
+                works, total = await client.get_road_works_by_address(
+                    address=address,
+                    radius=3,
+                    count=count,
+                )
+                return format_road_works_list_for_chat(works, total)
+            elif district:
+                # Поиск по району
+                works, total = await client.get_road_works(
+                    district=district,
+                    count=count,
+                )
+                return format_road_works_list_for_chat(works, total, district)
+            else:
+                # Общая статистика по районам
+                stats = await client.get_road_works_stats()
+                from app.api.yazzh_new import format_road_works_for_chat
+
+                return format_road_works_for_chat(stats)
+
+    try:
+        result = asyncio.run(_get_road_works())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_road_works_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_road_works_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_schools_by_district_v2(
+    district: str,
+    kind: str | None = None,
+) -> str:
+    """Получить список школ в указанном районе Санкт-Петербурга.
+
+    Args:
+        district: Название района. Примеры: "Невский", "Центральный", "Выборгский"
+        kind: Тип учреждения (опционально). Значения:
+            - "Общеобразовательное" - обычные школы
+            - "С углубленным изучением" - специализированные
+            - None - все типы
+
+    Returns:
+        Список школ с профилями обучения и контактами
+    """
+    from app.api.yazzh_new import (
+        format_schools_by_district_for_chat,
+    )
+
+    logger.info('tool_called', tool='get_schools_by_district_v2', district=district, kind=kind)
+
+    async def _get_schools() -> str:
+        async with YazzhAsyncClient() as client:
+            schools = await client.get_schools_by_district(
+                district=district,
+                kind=kind or None,
+            )
+            return format_schools_by_district_for_chat(schools, district)
+
+    try:
+        result = asyncio.run(_get_schools())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_schools_by_district_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_schools_by_district_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_vet_clinics_v2(
+    address: str,
+    radius: int = 5000,
+) -> str:
+    """Найти ветеринарные клиники рядом с указанным адресом.
+
+    Поиск ветклиник в радиусе от заданного адреса для помощи питомцам.
+
+    Args:
+        address: Адрес для поиска. Примеры: "Невский проспект 1", "пр. Просвещения 50"
+        radius: Радиус поиска в метрах (по умолчанию 5000)
+
+    Returns:
+        Список ветеринарных клиник с адресами, телефонами и услугами
+    """
+    from app.api.yazzh_new import (
+        format_vet_clinics_for_chat,
+    )
+
+    logger.info('tool_called', tool='get_vet_clinics_v2', address=address, radius=radius)
+
+    # Конвертируем метры в км для API
+    radius_km = max(1, radius // 1000)
+
+    async def _get_vet_clinics() -> str:
+        async with YazzhAsyncClient() as client:
+            clinics, _ = await client.get_vet_clinics_by_address(
+                address=address,
+                radius=radius_km,
+            )
+            return format_vet_clinics_for_chat(clinics)
+
+    try:
+        result = asyncio.run(_get_vet_clinics())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_vet_clinics_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_vet_clinics_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_pet_parks_v2(
+    address: str,
+    radius: int = 5000,
+    place_type: str | None = None,
+) -> str:
+    """Найти парки и площадки для выгула собак рядом с указанным адресом.
+
+    Поиск мест для прогулок с питомцами: парки и специальные площадки для собак.
+
+    Args:
+        address: Адрес для поиска. Примеры: "Невский проспект 1", "Комендантский проспект 10"
+        radius: Радиус поиска в метрах (по умолчанию 5000)
+        place_type: Тип места (опционально):
+            - "Парк" - парки для выгула
+            - "Площадка" - специальные площадки для собак
+            - None - все типы
+
+    Returns:
+        Список парков и площадок с адресами и описанием
+    """
+    from app.api.yazzh_new import (
+        format_pet_parks_for_chat,
+    )
+
+    logger.info(
+        'tool_called',
+        tool='get_pet_parks_v2',
+        address=address,
+        radius=radius,
+        place_type=place_type,
+    )
+
+    # Конвертируем метры в км для API
+    radius_km = max(1, radius // 1000)
+
+    async def _get_pet_parks() -> str:
+        async with YazzhAsyncClient() as client:
+            parks, _ = await client.get_pet_parks_by_address(
+                address=address,
+                radius=radius_km,
+            )
+            return format_pet_parks_for_chat(parks)
+
+    try:
+        result = asyncio.run(_get_pet_parks())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_pet_parks_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_pet_parks_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
 # Экспорт инструментов
 # ============================================================================
 
@@ -1013,4 +1217,9 @@ city_tools_v2 = [
     get_memorable_dates_today_v2,
     get_sportgrounds_count_v2,
     get_sportgrounds_v2,
+    # Tier 2: Дорожные работы, школы, ветклиники, парки для питомцев
+    get_road_works_v2,
+    get_schools_by_district_v2,
+    get_vet_clinics_v2,
+    get_pet_parks_v2,
 ]

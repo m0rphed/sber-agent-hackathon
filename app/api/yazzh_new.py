@@ -474,6 +474,188 @@ class SportgroundInfo(BaseModel):
             lines.append(f'   🏙️ Район: {self.district}')
         return '\n'.join(lines)
 
+
+# ============================================================================
+# Tier 2: Дорожные работы ГАТИ
+# ============================================================================
+
+
+class RoadWorkDistrictInfo(BaseModel):
+    """Информация о дорожных работах в районе"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    district_id: int = Field(..., description='ID района')
+    district: str = Field(..., description='Название района')
+    count: int = Field(..., description='Количество работ')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию для человека"""
+        return f'🚧 {self.district}: {self.count} работ'
+
+
+class RoadWorkStats(BaseModel):
+    """Статистика дорожных работ по городу"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    count: int = Field(..., description='Общее количество работ')
+    count_district: list[RoadWorkDistrictInfo] = Field(
+        default_factory=list,
+        description='Количество по районам',
+    )
+
+
+class RoadWorkInfo(BaseModel):
+    """Информация о конкретных дорожных работах"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int = Field(..., description='ID работы')
+    title: str | None = Field(None, description='Название/описание работ')
+    address: str | None = Field(None, description='Адрес')
+    district: str | None = Field(None, description='Район')
+    work_type: str | None = Field(None, description='Тип работ')
+    coordinates: list[float] | None = Field(None, description='Координаты')
+    date_start: str | None = Field(None, description='Дата начала')
+    date_end: str | None = Field(None, description='Дата окончания')
+    organization: str | None = Field(None, description='Организация')
+    distance: float | None = Field(None, description='Расстояние в км')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию для человека"""
+        lines = []
+        # Используем work_type как основной текст если нет title
+        main_text = self.title or self.work_type or 'Дорожные работы'
+        lines.append(f'🚧 {main_text}')
+        if self.address:
+            lines.append(f'   📍 {self.address}')
+        elif self.coordinates:
+            lines.append(f'   📍 Координаты: {self.coordinates[0]:.5f}, {self.coordinates[1]:.5f}')
+        if self.work_type and self.title:
+            # Показываем work_type только если есть отдельный title
+            lines.append(f'   🔧 Тип: {self.work_type}')
+        if self.date_start and self.date_end:
+            lines.append(f'   📅 {self.date_start} — {self.date_end}')
+        elif self.date_start:
+            lines.append(f'   📅 С {self.date_start}')
+        if self.organization:
+            lines.append(f'   🏢 {self.organization}')
+        if self.distance:
+            lines.append(f'   📏 Расстояние: {self.distance:.1f} км')
+        return '\n'.join(lines)
+
+
+# ============================================================================
+# Tier 2: Ветклиники и парки для питомцев
+# ============================================================================
+
+
+class VetClinicInfo(BaseModel):
+    """Информация о ветеринарной клинике"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int = Field(..., description='ID клиники')
+    type: str | None = Field(None, description='Тип (Ветклиника)')
+    title: str | None = Field(None, description='Название')
+    address: str | None = Field(None, description='Адрес')
+    coordinates: list[float] | None = Field(None, description='Координаты')
+    phone: list[str] | None = Field(None, description='Телефоны')
+    website: str | None = Field(None, description='Сайт')
+    operating_mode: str | None = Field(None, description='Режим работы')
+    around_the_clock: bool | None = Field(None, description='Круглосуточно')
+    list_service: list[str] | None = Field(None, description='Услуги')
+    distance: float | None = Field(None, description='Расстояние в км')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию для человека"""
+        lines = []
+        if self.title:
+            lines.append(f'🏥 {self.title}')
+        if self.address:
+            lines.append(f'   📍 {self.address}')
+        if self.phone:
+            lines.append(f'   📞 {", ".join(self.phone)}')
+        if self.around_the_clock:
+            lines.append('   ⏰ Круглосуточно')
+        elif self.operating_mode:
+            # Берём первую строку режима работы
+            mode = self.operating_mode.split('\n')[0][:80]
+            lines.append(f'   ⏰ {mode}')
+        if self.list_service and len(self.list_service) > 0:
+            services = ', '.join(self.list_service[:5])
+            if len(self.list_service) > 5:
+                services += f' и ещё {len(self.list_service) - 5}'
+            lines.append(f'   💊 Услуги: {services}')
+        if self.distance is not None:
+            lines.append(f'   📏 Расстояние: {self.distance:.1f} км')
+        return '\n'.join(lines)
+
+
+class PetParkInfo(BaseModel):
+    """Информация о площадке/парке для питомцев"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: str | int = Field(..., description='ID площадки')
+    type: str | None = Field(None, description='Тип (Площадка/Парк)')
+    title: str | None = Field(None, description='Название')
+    address: str | None = Field(None, description='Адрес')
+    coordinates: list[float] | None = Field(None, description='Координаты')
+    distance: float | None = Field(None, description='Расстояние в км')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию для человека"""
+        lines = []
+        emoji = '🌳' if self.type == 'Парк' else '🐕'
+        if self.title:
+            lines.append(f'{emoji} {self.title}')
+        if self.address:
+            lines.append(f'   📍 {self.address}')
+        if self.type:
+            lines.append(f'   🏷️ Тип: {self.type}')
+        if self.distance is not None:
+            lines.append(f'   📏 Расстояние: {self.distance:.1f} км')
+        return '\n'.join(lines)
+
+
+# ============================================================================
+# Tier 2: Школы по району
+# ============================================================================
+
+
+class SchoolMapInfo(BaseModel):
+    """Информация о школе из карты школ"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int = Field(..., description='ID школы')
+    name: str | None = Field(None, description='Название')
+    kind: str | None = Field(None, description='Тип школы')
+    subject: list[str] | None = Field(None, description='Углублённые предметы')
+    district: str | None = Field(None, description='Район')
+    address: str | None = Field(None, description='Адрес')
+    coordinates: list[float] | None = Field(None, description='Координаты')
+    ogrn: str | None = Field(None, description='ОГРН')
+    profile: list[str] | None = Field(None, description='Профили обучения')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию для человека"""
+        lines = []
+        if self.name:
+            lines.append(f'🏫 {self.name}')
+        if self.kind:
+            lines.append(f'   🎓 {self.kind}')
+        if self.address:
+            lines.append(f'   📍 {self.address}')
+        if self.subject:
+            lines.append(f'   📚 Углублённое: {", ".join(self.subject)}')
+        if self.profile:
+            lines.append(f'   🎯 Профили: {", ".join(self.profile)}')
+        return '\n'.join(lines)
+
+
 # ============================================================================
 # API Error handling
 # ============================================================================
@@ -576,7 +758,7 @@ class YazzhAsyncClient:
     def _check_gateway_errors(self, response: httpx.Response, method: str) -> None:
         """
         Проверяет ответ на наличие Gateway ошибок (502, 504).
-        
+
         Raises:
             ServiceUnavailableError: Если API вернул 502 или 504
         """
@@ -1483,7 +1665,9 @@ class YazzhAsyncClient:
         self._check_gateway_errors(response, 'get_pensioner_services')
 
         if response.status_code != 200:
-            logger.warning('api_error', method='get_pensioner_services', status=response.status_code)
+            logger.warning(
+                'api_error', method='get_pensioner_services', status=response.status_code
+            )
             return []
 
         data = response.json()
@@ -1701,6 +1885,380 @@ class YazzhAsyncClient:
 
         return sportgrounds, total_count
 
+    # ========================================================================
+    # Tier 2: Дорожные работы ГАТИ
+    # ========================================================================
+
+    async def get_road_works_stats(self) -> RoadWorkStats | None:
+        """
+        Получить статистику дорожных работ по всему городу и районам.
+
+        Returns:
+            Статистика работ с разбивкой по районам
+        """
+        logger.info('api_call', method='get_road_works_stats')
+
+        response = await self.client.get(f'{self.api_site}/gati/orders/district/')
+
+        self._check_gateway_errors(response, 'get_road_works_stats')
+
+        if response.status_code != 200:
+            return None
+
+        data = response.json()
+        return RoadWorkStats.model_validate(data)
+
+    async def get_road_works_by_district(
+        self,
+        district: str | None = None,
+    ) -> list[RoadWorkDistrictInfo]:
+        """
+        Получить статистику дорожных работ по районам.
+
+        Args:
+            district: Фильтр по району (напр. "Невский"). Пустая строка = все районы.
+
+        Returns:
+            Список с количеством работ по районам
+        """
+        logger.info('api_call', method='get_road_works_by_district', district=district)
+
+        stats = await self.get_road_works_stats()
+        if not stats:
+            return []
+
+        if district:
+            # Фильтруем по конкретному району
+            return [d for d in stats.count_district if d.district == district]
+        return stats.count_district
+
+    async def get_road_works(
+        self,
+        district: str | None = None,
+        work_type: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        radius: int = 5,
+        count: int = 10,
+    ) -> tuple[list[RoadWorkInfo], int]:
+        """
+        Получить список дорожных работ.
+
+        Args:
+            district: Район (напр. "Невский")
+            work_type: Тип работ
+            latitude: Широта для поиска рядом
+            longitude: Долгота для поиска рядом
+            radius: Радиус поиска в км
+            count: Количество результатов (макс 10000)
+
+        Returns:
+            Кортеж (список работ, общее количество)
+        """
+        logger.info(
+            'api_call',
+            method='get_road_works',
+            district=district,
+            work_type=work_type,
+            count=count,
+        )
+
+        params: dict = {'count': min(count, 100)}
+        if district:
+            params['district'] = district
+        if work_type:
+            params['work_type'] = work_type
+        if latitude and longitude:
+            params['location_latitude'] = latitude
+            params['location_longitude'] = longitude
+            params['location_radius'] = radius
+
+        response = await self.client.get(
+            f'{self.api_site}/gati/orders/map/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_road_works')
+
+        if response.status_code != 200:
+            return [], 0
+
+        data = response.json()
+        total_count = data.get('count', 0)
+        items = data.get('data', [])
+
+        works = []
+        for item in items:
+            # Извлекаем distance из location если есть
+            location = item.get('location', {})
+            if location:
+                item['distance'] = location.get('distance')
+            works.append(RoadWorkInfo.model_validate(item))
+
+        return works, total_count
+
+    async def get_road_works_by_address(
+        self,
+        address: str,
+        radius: int = 3,
+        count: int = 10,
+    ) -> tuple[list[RoadWorkInfo], int]:
+        """
+        Получить дорожные работы рядом с адресом.
+
+        Args:
+            address: Адрес для поиска
+            radius: Радиус в км
+            count: Количество результатов
+
+        Returns:
+            Кортеж (список работ, общее количество)
+        """
+        buildings = await self.search_building(address, count=1)
+        if not buildings:
+            return [], 0
+
+        building = buildings[0]
+        return await self.get_road_works(
+            latitude=building.latitude,
+            longitude=building.longitude,
+            radius=radius,
+            count=count,
+        )
+
+    # ========================================================================
+    # Tier 2: Ветклиники
+    # ========================================================================
+
+    async def get_vet_clinics(
+        self,
+        latitude: float,
+        longitude: float,
+        radius: int = 5,
+    ) -> tuple[list[VetClinicInfo], int]:
+        """
+        Получить ветеринарные клиники рядом с координатами.
+
+        Args:
+            latitude: Широта
+            longitude: Долгота
+            radius: Радиус поиска в км (по умолчанию 5)
+
+        Returns:
+            Кортеж (список клиник, общее количество)
+        """
+        logger.info(
+            'api_call',
+            method='get_vet_clinics',
+            lat=latitude,
+            lon=longitude,
+            radius=radius,
+        )
+
+        params = {
+            'location_latitude': latitude,
+            'location_longitude': longitude,
+            'location_radius': radius,
+        }
+
+        response = await self.client.get(
+            f'{self.api_site}/mypets/clinics/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_vet_clinics')
+
+        if response.status_code != 200:
+            return [], 0
+
+        data = response.json()
+        total_count = data.get('count', 0)
+        items = data.get('data', [])
+
+        clinics = []
+        for item in items:
+            place = item.get('place', {})
+            if place:
+                # Извлекаем distance из location
+                location = place.get('location', {})
+                if location:
+                    place['distance'] = location.get('distance')
+                clinics.append(VetClinicInfo.model_validate(place))
+
+        return clinics, total_count
+
+    async def get_vet_clinics_by_address(
+        self,
+        address: str,
+        radius: int = 5,
+    ) -> tuple[list[VetClinicInfo], int]:
+        """
+        Получить ветеринарные клиники рядом с адресом.
+
+        Args:
+            address: Адрес для поиска
+            radius: Радиус поиска в км
+
+        Returns:
+            Кортеж (список клиник, общее количество)
+        """
+        # Сначала получаем координаты здания
+        buildings = await self.search_building(address)
+        if not buildings:
+            return [], 0
+
+        # Берём первое здание из списка
+        building = buildings[0]
+        coords = building.coords  # property, возвращает (lat, lon) или None
+        if not coords:
+            return [], 0
+
+        lat, lon = coords
+        return await self.get_vet_clinics(lat, lon, radius)
+
+    # ========================================================================
+    # Tier 2: Парки и площадки для питомцев
+    # ========================================================================
+
+    async def get_pet_parks(
+        self,
+        latitude: float,
+        longitude: float,
+        radius: int = 5,
+        place_type: str | None = None,
+    ) -> tuple[list[PetParkInfo], int]:
+        """
+        Получить площадки и парки для выгула питомцев.
+
+        Args:
+            latitude: Широта
+            longitude: Долгота
+            radius: Радиус поиска в км (по умолчанию 5)
+            place_type: Тип места ("Площадка" или "Парк")
+
+        Returns:
+            Кортеж (список мест, общее количество)
+        """
+        logger.info(
+            'api_call',
+            method='get_pet_parks',
+            lat=latitude,
+            lon=longitude,
+            radius=radius,
+            place_type=place_type,
+        )
+
+        params: dict[str, float | int | str] = {
+            'location_latitude': latitude,
+            'location_longitude': longitude,
+            'location_radius': radius,
+        }
+        if place_type:
+            params['type'] = place_type
+
+        response = await self.client.get(
+            f'{self.api_site}/mypets/parks-playground/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_pet_parks')
+
+        if response.status_code != 200:
+            return [], 0
+
+        data = response.json()
+        total_count = data.get('count', 0)
+        items = data.get('data', [])
+
+        parks = []
+        for item in items:
+            place = item.get('place', {})
+            if place:
+                # Извлекаем distance из location
+                location = place.get('location', {})
+                if location:
+                    place['distance'] = location.get('distance')
+                parks.append(PetParkInfo.model_validate(place))
+
+        return parks, total_count
+
+    async def get_pet_parks_by_address(
+        self,
+        address: str,
+        radius: int = 5,
+    ) -> tuple[list[PetParkInfo], int]:
+        """
+        Получить площадки для питомцев рядом с адресом.
+
+        Args:
+            address: Адрес для поиска
+            radius: Радиус поиска в км
+
+        Returns:
+            Кортеж (список мест, общее количество)
+        """
+        buildings = await self.search_building(address)
+        if not buildings:
+            return [], 0
+
+        building = buildings[0]
+        coords = building.coords
+        if not coords:
+            return [], 0
+
+        lat, lon = coords
+        return await self.get_pet_parks(lat, lon, radius)
+
+    # ========================================================================
+    # Tier 2: Школы по району
+    # ========================================================================
+
+    async def get_schools_by_district(
+        self,
+        district: str,
+        kind: str | None = None,
+        count: int = 20,
+    ) -> list[SchoolMapInfo]:
+        """
+        Получить школы в районе.
+
+        Args:
+            district: Район (напр. "Невский")
+            kind: Тип школы (напр. "Лицей", "Гимназия")
+            count: Максимальное количество
+
+        Returns:
+            Список школ
+        """
+        logger.info(
+            'api_call',
+            method='get_schools_by_district',
+            district=district,
+            kind=kind,
+        )
+
+        response = await self.client.get(f'{self.api_site}/school/map/')
+
+        self._check_gateway_errors(response, 'get_schools_by_district')
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        all_schools = data.get('data', [])
+
+        # Фильтруем по району
+        filtered = [s for s in all_schools if s.get('district') == district]
+
+        # Фильтруем по типу если указан
+        if kind:
+            filtered = [s for s in filtered if kind.lower() in (s.get('kind') or '').lower()]
+
+        # Ограничиваем количество
+        filtered = filtered[:count]
+
+        return [SchoolMapInfo.model_validate(s) for s in filtered]
+
 
 # ============================================================================
 # Форматтеры для вывода в чат
@@ -1864,6 +2422,133 @@ def format_sportgrounds_for_chat(
     for sg in sportgrounds:
         lines.append(sg.format_for_human())
         lines.append('')  # пустая строка
+
+    return '\n'.join(lines)
+
+
+# ============================================================================
+# Tier 2: Форматтеры
+# ============================================================================
+
+
+def format_road_works_for_chat(
+    works: list[RoadWorkDistrictInfo] | RoadWorkStats | None,
+    district: str | None = None,
+) -> str:
+    """Форматировать статистику дорожных работ для чата"""
+    if works is None:
+        return 'Не удалось получить информацию о дорожных работах.'
+
+    if isinstance(works, RoadWorkStats):
+        lines = [f'🚧 Дорожные работы в Санкт-Петербурге: всего {works.count}\n']
+        # Сортируем по количеству
+        sorted_districts = sorted(works.count_district, key=lambda x: x.count, reverse=True)
+        for d in sorted_districts:
+            lines.append(f'• {d.district}: {d.count}')
+        return '\n'.join(lines)
+
+    if not works:
+        if district:
+            return f'В районе {district} активных дорожных работ не найдено.'
+        return 'Информация о дорожных работах не найдена.'
+
+    if len(works) == 1:
+        w = works[0]
+        if w.count == 0:
+            return f'🚧 В районе {w.district} сейчас нет активных дорожных работ.'
+        return f'🚧 В районе {w.district}: {w.count} дорожных работ.'
+
+    # Несколько районов
+    lines = ['🚧 Дорожные работы по районам:\n']
+    sorted_works = sorted(works, key=lambda x: x.count, reverse=True)
+    for w in sorted_works:
+        lines.append(f'• {w.district}: {w.count}')
+    return '\n'.join(lines)
+
+
+def format_road_works_list_for_chat(
+    works: list[RoadWorkInfo],
+    total_count: int | None = None,
+    district: str | None = None,
+) -> str:
+    """Форматировать список дорожных работ для чата"""
+    if not works:
+        if district:
+            return f'В районе {district} активных дорожных работ не найдено.'
+        return 'Дорожные работы в указанном месте не найдены.'
+
+    lines = []
+    header = '🚧 Дорожные работы'
+    if district:
+        header += f' в районе {district}'
+    if total_count is not None:
+        header += f': найдено {total_count}'
+        if len(works) < total_count:
+            header += f' (показано {len(works)})'
+    lines.append(header + '\n')
+
+    for work in works:
+        lines.append(work.format_for_human())
+        lines.append('')
+
+    return '\n'.join(lines)
+
+
+def format_vet_clinics_for_chat(
+    clinics: list[VetClinicInfo],
+    total_count: int | None = None,
+) -> str:
+    """Форматировать список ветклиник для чата"""
+    if not clinics:
+        return 'Ветеринарные клиники не найдены поблизости. Попробуйте увеличить радиус поиска.'
+
+    lines = []
+    if total_count is not None:
+        lines.append(f'🏥 Найдено ветклиник: {total_count} (показано {len(clinics)})\n')
+    else:
+        lines.append(f'🏥 Найдено ветклиник: {len(clinics)}\n')
+
+    for clinic in clinics:
+        lines.append(clinic.format_for_human())
+        lines.append('')
+
+    return '\n'.join(lines)
+
+
+def format_pet_parks_for_chat(
+    parks: list[PetParkInfo],
+    total_count: int | None = None,
+) -> str:
+    """Форматировать список парков/площадок для питомцев"""
+    if not parks:
+        return 'Площадки для выгула питомцев не найдены поблизости. Попробуйте увеличить радиус поиска.'
+
+    lines = []
+    if total_count is not None:
+        lines.append(f'🐕 Найдено мест для выгула: {total_count} (показано {len(parks)})\n')
+    else:
+        lines.append(f'🐕 Найдено мест для выгула: {len(parks)}\n')
+
+    for park in parks:
+        lines.append(park.format_for_human())
+        lines.append('')
+
+    return '\n'.join(lines)
+
+
+def format_schools_by_district_for_chat(
+    schools: list[SchoolMapInfo],
+    district: str,
+) -> str:
+    """Форматировать список школ в районе"""
+    if not schools:
+        return f'В районе {district} школы не найдены.'
+
+    lines = [f'🏫 Школы в районе {district}: найдено {len(schools)}\n']
+
+    for school in schools:
+        lines.append(school.format_for_human())
+        lines.append('')
 
     return '\n'.join(lines)
 

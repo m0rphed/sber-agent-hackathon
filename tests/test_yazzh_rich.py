@@ -839,9 +839,11 @@ async def demo_sportgrounds(raw: bool = False) -> None:
             print_output('get_sportgrounds_types', types, raw=raw)
 
             if not raw and types:
-                console.print(f'[green]✅ Летние: {len(types.get("summer", []))}, '
-                            f'Зимние: {len(types.get("winter", []))}, '
-                            f'Все: {len(types.get("all", []))}[/green]')
+                console.print(
+                    f'[green]✅ Летние: {len(types.get("summer", []))}, '
+                    f'Зимние: {len(types.get("winter", []))}, '
+                    f'Все: {len(types.get("all", []))}[/green]'
+                )
         except Exception as e:
             print_error('get_sportgrounds_types', e)
 
@@ -873,6 +875,246 @@ async def demo_sportgrounds(raw: bool = False) -> None:
                 console.print(f'[green]✅ Футбольных площадок в Центральном: {total}[/green]')
         except Exception as e:
             print_error('get_sportgrounds', e)
+
+
+# ============================================================================
+# Tier 2: Дорожные работы, школы, ветклиники, парки для питомцев
+# ============================================================================
+
+
+async def demo_road_works(raw: bool = False) -> None:
+    """
+    Тесты для дорожных работ ГАТИ
+    """
+    from app.api.yazzh_new import YazzhAsyncClient, format_road_works_for_chat
+
+    print_separator('🚧 ТЕСТЫ ДОРОЖНЫХ РАБОТ ГАТИ')
+
+    async with YazzhAsyncClient() as client:
+        # Тест 1: Общая статистика
+        print_input('get_road_works_stats')
+
+        try:
+            stats = await client.get_road_works_stats()
+            print_output('get_road_works_stats', stats, raw=raw)
+
+            if not raw and stats:
+                console.print(
+                    f'[green]✅ Всего работ: {stats.count}, '
+                    f'Районов: {len(stats.count_district)}[/green]'
+                )
+        except Exception as e:
+            print_error('get_road_works_stats', e)
+
+        # Тест 2: Конкретный район
+        district = 'Невский'
+        print_input('get_road_works_by_district', district=district)
+
+        try:
+            result = await client.get_road_works_by_district(district)
+            print_output(f'get_road_works_by_district ({district})', result, raw=raw)
+
+            if not raw and result:
+                info = result[0]
+                console.print(f'[green]✅ {info.district}: {info.count} работ[/green]')
+        except Exception as e:
+            print_error('get_road_works_by_district', e)
+
+        # Тест 3: Форматтер
+        print_input('format_road_works_for_chat')
+
+        try:
+            stats = await client.get_road_works_stats()
+            formatted = format_road_works_for_chat(stats)
+
+            if raw:
+                console.print(formatted)
+            else:
+                console.print(f'[green]✅ Форматтер работает ({len(formatted)} символов)[/green]')
+                console.print(Panel(formatted[:500] + '...' if len(formatted) > 500 else formatted))
+        except Exception as e:
+            print_error('format_road_works_for_chat', e)
+
+
+async def demo_vet_clinics(raw: bool = False) -> None:
+    """
+    Тесты для ветеринарных клиник
+    """
+    from app.api.yazzh_new import YazzhAsyncClient, format_vet_clinics_for_chat
+
+    print_separator('🐕 ТЕСТЫ ВЕТКЛИНИК')
+
+    async with YazzhAsyncClient() as client:
+        # Тест 1: По координатам
+        lat, lon = 59.9343, 30.3351  # Центр города
+        print_input('get_vet_clinics', lat=lat, lon=lon, radius=5)
+
+        try:
+            clinics, total = await client.get_vet_clinics(lat, lon, radius=5)
+            print_output('get_vet_clinics', clinics, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Найдено клиник: {len(clinics)} (всего: {total})[/green]')
+        except Exception as e:
+            print_error('get_vet_clinics', e)
+
+        # Тест 2: По адресу
+        address = 'Невский проспект 1'
+        print_input('get_vet_clinics_by_address', address=address, radius=5)
+
+        try:
+            clinics, total = await client.get_vet_clinics_by_address(address, radius=5)
+            print_output(f'get_vet_clinics_by_address ({address})', clinics, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Найдено рядом с адресом: {len(clinics)}[/green]')
+        except Exception as e:
+            print_error('get_vet_clinics_by_address', e)
+
+        # Тест 3: Форматтер
+        print_input('format_vet_clinics_for_chat')
+
+        try:
+            clinics, _ = await client.get_vet_clinics(lat, lon, radius=5)
+            formatted = format_vet_clinics_for_chat(clinics[:3])
+
+            if raw:
+                console.print(formatted)
+            else:
+                console.print('[green]✅ Форматтер работает[/green]')
+                console.print(Panel(formatted))
+        except Exception as e:
+            print_error('format_vet_clinics_for_chat', e)
+
+
+async def demo_pet_parks(raw: bool = False) -> None:
+    """
+    Тесты для парков и площадок для питомцев
+    """
+    from app.api.yazzh_new import YazzhAsyncClient, format_pet_parks_for_chat
+
+    print_separator('🌳 ТЕСТЫ ПАРКОВ ДЛЯ ПИТОМЦЕВ')
+
+    async with YazzhAsyncClient() as client:
+        # Тест 1: Все типы по координатам
+        lat, lon = 59.9343, 30.3351  # Центр города
+        print_input('get_pet_parks', lat=lat, lon=lon, radius=5)
+
+        try:
+            parks, total = await client.get_pet_parks(lat, lon, radius=5)
+            print_output('get_pet_parks', parks, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Найдено мест: {len(parks)} (всего: {total})[/green]')
+        except Exception as e:
+            print_error('get_pet_parks', e)
+
+        # Тест 2: Только площадки
+        print_input('get_pet_parks (Площадка)', place_type='Площадка')
+
+        try:
+            parks, total = await client.get_pet_parks(lat, lon, radius=10, place_type='Площадка')
+            print_output('get_pet_parks (Площадка)', parks, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Площадок для собак: {len(parks)}[/green]')
+        except Exception as e:
+            print_error('get_pet_parks', e)
+
+        # Тест 3: По адресу
+        address = 'Комендантский проспект 10'
+        print_input('get_pet_parks_by_address', address=address)
+
+        try:
+            parks, total = await client.get_pet_parks_by_address(address, radius=5)
+            print_output(f'get_pet_parks_by_address ({address})', parks, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Найдено рядом: {len(parks)}[/green]')
+        except Exception as e:
+            print_error('get_pet_parks_by_address', e)
+
+        # Тест 4: Форматтер
+        print_input('format_pet_parks_for_chat')
+
+        try:
+            parks, _ = await client.get_pet_parks(lat, lon, radius=10)
+            formatted = format_pet_parks_for_chat(parks[:5])
+
+            if raw:
+                console.print(formatted)
+            else:
+                console.print('[green]✅ Форматтер работает[/green]')
+                console.print(Panel(formatted))
+        except Exception as e:
+            print_error('format_pet_parks_for_chat', e)
+
+
+async def demo_schools_by_district(raw: bool = False) -> None:
+    """
+    Тесты для школ по району
+    """
+    from app.api.yazzh_new import YazzhAsyncClient, format_schools_by_district_for_chat
+
+    print_separator('🎓 ТЕСТЫ ШКОЛ ПО РАЙОНУ')
+
+    async with YazzhAsyncClient() as client:
+        # Тест 1: Все школы района
+        district = 'Невский'
+        print_input('get_schools_by_district', district=district)
+
+        try:
+            schools = await client.get_schools_by_district(district)
+            print_output(f'get_schools_by_district ({district})', schools, raw=raw)
+
+            if not raw and schools:
+                console.print(f'[green]✅ Школ в {district} районе: {len(schools)}[/green]')
+        except Exception as e:
+            print_error('get_schools_by_district', e)
+
+        # Тест 2: Только с углублёнкой
+        print_input(
+            'get_schools_by_district (Углублённое)',
+            district=district,
+            kind='С углубленным изучением',
+        )
+
+        try:
+            schools = await client.get_schools_by_district(district, kind='С углубленным изучением')
+            print_output('get_schools_by_district (Углублённое)', schools, raw=raw)
+
+            if not raw:
+                console.print(f'[green]✅ Школ с углублённым изучением: {len(schools)}[/green]')
+        except Exception as e:
+            print_error('get_schools_by_district', e)
+
+        # Тест 3: Центральный район
+        district2 = 'Центральный'
+        print_input('get_schools_by_district', district=district2)
+
+        try:
+            schools = await client.get_schools_by_district(district2)
+            print_output(f'get_schools_by_district ({district2})', schools, raw=raw)
+
+            if not raw and schools:
+                console.print(f'[green]✅ Школ в {district2} районе: {len(schools)}[/green]')
+        except Exception as e:
+            print_error('get_schools_by_district', e)
+
+        # Тест 4: Форматтер
+        print_input('format_schools_by_district_for_chat')
+
+        try:
+            schools = await client.get_schools_by_district('Невский')
+            formatted = format_schools_by_district_for_chat(schools[:3], 'Невский')
+
+            if raw:
+                console.print(formatted)
+            else:
+                console.print(f'[green]✅ Форматтер работает[/green]')
+                console.print(Panel(formatted))
+        except Exception as e:
+            print_error('format_schools_by_district_for_chat', e)
 
 
 # ============================================================================
@@ -1343,6 +1585,19 @@ def demo(
     sportgrounds: Annotated[
         bool, typer.Option('--sportgrounds', '--sg', help='Тесты спортплощадок')
     ] = False,
+    # Tier 2
+    road_works: Annotated[
+        bool, typer.Option('--road-works', '--rw', help='Тесты дорожных работ ГАТИ')
+    ] = False,
+    vet_clinics: Annotated[
+        bool, typer.Option('--vet-clinics', '--vet', help='Тесты ветклиник')
+    ] = False,
+    pet_parks: Annotated[
+        bool, typer.Option('--pet-parks', '--pets', help='Тесты парков для питомцев')
+    ] = False,
+    schools_district: Annotated[
+        bool, typer.Option('--schools-district', '--sd', help='Тесты школ по району')
+    ] = False,
     mfc: Annotated[bool, typer.Option('--mfc', '-m', help='Тесты МФЦ')] = False,
     schools: Annotated[bool, typer.Option('--schools', '-s', help='Тесты школ')] = False,
     polyclinics: Annotated[
@@ -1376,6 +1631,10 @@ def demo(
             pensioner,
             memorable,
             sportgrounds,
+            road_works,
+            vet_clinics,
+            pet_parks,
+            schools_district,
             mfc,
             schools,
             polyclinics,
@@ -1408,6 +1667,14 @@ def demo(
             await demo_memorable_dates(raw=raw)
         if sportgrounds:
             await demo_sportgrounds(raw=raw)
+        if road_works:
+            await demo_road_works(raw=raw)
+        if vet_clinics:
+            await demo_vet_clinics(raw=raw)
+        if pet_parks:
+            await demo_pet_parks(raw=raw)
+        if schools_district:
+            await demo_schools_by_district(raw=raw)
         if mfc:
             await demo_mfc(raw=raw)
         if schools:
@@ -1448,6 +1715,10 @@ def run_all(
         await demo_pensioner_services(raw=raw)
         await demo_memorable_dates(raw=raw)
         await demo_sportgrounds(raw=raw)
+        await demo_road_works(raw=raw)
+        await demo_vet_clinics(raw=raw)
+        await demo_pet_parks(raw=raw)
+        await demo_schools_by_district(raw=raw)
         await demo_mfc(raw=raw)
         await demo_schools(raw=raw)
         await demo_polyclinics(raw=raw)
