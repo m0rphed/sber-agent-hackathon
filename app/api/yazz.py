@@ -663,7 +663,7 @@ class CityAppClient:
         self,
         location_latitude: float | None = None,
         location_longitude: float | None = None,
-        location_radius: int | None = 5,
+        location_radius: int | None = 10,
         services: list[str] | None = None,
         user_address: str | None = None,
     ):

@@ -57,7 +57,7 @@ def supervisor(config: RunnableConfig | None = None) -> CompiledStateGraph:
     Returns:
         Скомпилированный StateGraph
     """
-    from app.agent.supervisor import create_supervisor_graph
+    from app.agent.supervisor_matvey import create_supervisor_graph
 
     logger.info(
         'graph_factory_supervisor',

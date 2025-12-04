@@ -19,7 +19,7 @@ def _user_id_to_uuid(user_id: str) -> str:
 async def chat_with_agent(
     user_chat_id: str,
     message: str,
-    agent_graph_id: GraphType = 'supervisor',  # граф агента по умолчанию
+    agent_graph_id: GraphType = 'hybrid',  # граф агента по умолчанию
 ) -> str:
     """
     Отправить сообщение агенту и получить ответ.
