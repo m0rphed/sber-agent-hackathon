@@ -1,0 +1,1163 @@
+"""
+Новый асинхронный клиент для API "Я Здесь Живу" (YAZZH)
+на основе httpx с Pydantic моделями для типизации.
+
+Этот клиент заменяет старый синхронный app.api.yazz и предоставляет:
+- Асинхронные запросы через httpx
+- Pydantic модели для типизации ответов
+- Удобные форматтеры для человекочитаемого вывода
+- Улучшенную обработку ошибок
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import httpx
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.config import API_GEO, API_SITE, REGION_ID
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+# ============================================================================
+# Pydantic модели для типизации API ответов
+# ============================================================================
+
+
+class BuildingSearchResult(BaseModel):
+    """Результат поиска здания по адресу"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int | str = Field(..., description="ID здания в системе YAZZH")
+    full_address: str = Field(..., description="Полный адрес здания")
+    latitude: float | None = Field(None, description="Широта")
+    longitude: float | None = Field(None, description="Долгота")
+    district: str | None = Field(None, description="Район")
+
+    @property
+    def building_id(self) -> str:
+        """ID здания как строка (для использования в API запросах)"""
+        return str(self.id)
+
+    @property
+    def coords(self) -> tuple[float, float] | None:
+        """Координаты здания как кортеж (lat, lon)"""
+        if self.latitude is not None and self.longitude is not None:
+            return (self.latitude, self.longitude)
+        return None
+
+
+class BuildingInfo(BaseModel):
+    """Расширенная информация о здании"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(..., description="ID здания")
+    full_address: str | None = Field(None, description="Полный адрес")
+    district: str | None = Field(None, description="Район")
+    latitude: float | None = Field(None)
+    longitude: float | None = Field(None)
+    year_build: int | None = Field(None, description="Год постройки")
+    floors: int | None = Field(None, description="Этажность")
+
+
+class ManagementCompanyInfo(BaseModel):
+    """Информация об управляющей компании"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str | None = Field(None, description="Название УК")
+    address: str | None = Field(None, description="Адрес УК")
+    phone: str | None = Field(None, description="Телефон")
+    email: str | None = Field(None, description="Email")
+    inn: str | None = Field(None, description="ИНН")
+    ogrn: str | None = Field(None, description="ОГРН")
+
+
+class MFCInfo(BaseModel):
+    """Информация о МФЦ"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str | None = Field(None, description="Название МФЦ")
+    address: str | None = Field(None, description="Адрес")
+    nearest_metro: str | None = Field(None, description="Ближайшее метро")
+    phone: str | list[str] | None = Field(None, description="Телефоны")
+    working_hours: str | None = Field(None, description="Часы работы")
+    coordinates: str | list | None = Field(None, description="Координаты")
+    distance: float | None = Field(None, description="Расстояние в км")
+    link: str | None = Field(None, description="Ссылка")
+    chat_bot: str | None = Field(None, description="Чат-бот")
+
+    @property
+    def coords_tuple(self) -> tuple[float, float] | None:
+        """Получить координаты как кортеж (lat, lon)"""
+        if isinstance(self.coordinates, list) and len(self.coordinates) == 2:
+            return (float(self.coordinates[0]), float(self.coordinates[1]))
+        return None
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о МФЦ для человека"""
+        lines = []
+        if self.name:
+            lines.append(f"📍 {self.name}")
+        if self.address:
+            lines.append(f"   Адрес: {self.address}")
+        if self.nearest_metro:
+            lines.append(f"   🚇 Метро: {self.nearest_metro}")
+        if self.phone:
+            phones = self.phone if isinstance(self.phone, str) else ", ".join(self.phone)
+            lines.append(f"   📞 Телефон: {phones}")
+        if self.working_hours:
+            lines.append(f"   🕐 Часы работы: {self.working_hours}")
+        if self.distance is not None:
+            lines.append(f"   📏 Расстояние: {self.distance:.1f} км")
+        if self.link:
+            lines.append(f"   🔗 {self.link}")
+        return "\n".join(lines)
+
+
+class PolyclinicInfo(BaseModel):
+    """Информация о поликлинике"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    clinic_name: str | None = Field(None, description="Название поликлиники")
+    clinic_address: str | None = Field(None, description="Адрес")
+    phone: list[str] | str | None = Field(None, description="Телефоны")
+    url: str | None = Field(None, description="Сайт")
+    type: str | None = Field(None, description="Тип (взрослая/детская)")
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о поликлинике для человека"""
+        lines = []
+        if self.clinic_name:
+            lines.append(f"🏥 {self.clinic_name}")
+        if self.type:
+            lines.append(f"   Тип: {self.type}")
+        if self.clinic_address:
+            lines.append(f"   Адрес: {self.clinic_address}")
+        if self.phone:
+            phones = self.phone if isinstance(self.phone, str) else ", ".join(self.phone)
+            lines.append(f"   📞 Телефон: {phones}")
+        if self.url:
+            lines.append(f"   🔗 {self.url}")
+        return "\n".join(lines)
+
+
+class SchoolInfo(BaseModel):
+    """Информация о школе"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int | None = Field(None)
+    uid: str | None = Field(None, description="UID школы")
+    name: str | None = Field(None, description="Краткое название")
+    full_name: str | None = Field(None, description="Полное название школы")
+    address: str | None = Field(None)
+    district: str | None = Field(None, description="Район")
+    phone: list[str] | str | None = Field(None, description="Телефоны")
+    site: str | None = Field(None, description="Сайт")
+    email: str | None = Field(None)
+    kind: str | None = Field(None, description="Вид школы")
+    head: str | None = Field(None, description="Директор")
+    vacant: int | None = Field(None, description="Свободные места")
+    subject: list[str] | None = Field(None, description="Профильные предметы")
+    profile: list[str] | None = Field(None, description="Профили обучения")
+    coordinates: list[float] | None = Field(None, description="Координаты")
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о школе для человека"""
+        lines = []
+        school_name = self.name or self.full_name
+        if school_name:
+            lines.append(f"🏫 {school_name}")
+        if self.kind:
+            lines.append(f"   Вид: {self.kind}")
+        if self.address:
+            lines.append(f"   Адрес: {self.address}")
+        if self.district:
+            lines.append(f"   Район: {self.district}")
+        if self.vacant is not None:
+            lines.append(f"   📚 Свободных мест: {self.vacant}")
+        if self.profile:
+            lines.append(f"   📖 Профили: {', '.join(self.profile)}")
+        if self.head:
+            lines.append(f"   👤 Директор: {self.head}")
+        if self.phone:
+            phones = self.phone if isinstance(self.phone, list) else [self.phone]
+            lines.append(f"   📞 Телефон: {', '.join(phones)}")
+        if self.site:
+            lines.append(f"   🔗 {self.site}")
+        return "\n".join(lines)
+
+
+class DistrictInfo(BaseModel):
+    """Информация о районе города"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int | None = Field(None)
+    name: str = Field(..., description="Название района")
+
+
+class KindergartenInfo(BaseModel):
+    """Информация о детском саде (ДОУ)"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    short_name: str | None = Field(None, alias="doo_short", description="Краткое название")
+    building_id: str | None = Field(None, description="ID здания")
+    available_spots: int | None = Field(None, alias="sum", description="Свободные места")
+    coordinates: list[float] | None = Field(None, description="Координаты [lat, lon]")
+    status: str | None = Field(None, alias="doo_status", description="Статус")
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о детском саде для человека"""
+        lines = []
+        if self.short_name:
+            lines.append(f"🏒 {self.short_name}")
+        if self.status:
+            lines.append(f"   Статус: {self.status}")
+        if self.available_spots is not None:
+            lines.append(f"   👶 Свободных мест: {self.available_spots}")
+        if self.coordinates:
+            lines.append(f"   📍 Координаты: {self.coordinates[0]:.6f}, {self.coordinates[1]:.6f}")
+        return "\n".join(lines)
+
+
+class EventInfo(BaseModel):
+    """Информация о событии/мероприятии из афиши"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int | None = Field(None)
+    title: str | None = Field(None, description="Название мероприятия")
+    title_short: str | None = Field(None, description="Краткое название")
+    categories: list[str] | None = Field(None, description="Категории")
+    description_short: str | None = Field(None, description="Краткое описание")
+    start_date: str | None = Field(None, description="Дата начала")
+    end_date: str | None = Field(None, description="Дата окончания")
+    location_title: str | None = Field(None, description="Название места")
+    address: str | None = Field(None, description="Адрес")
+    age: int | None = Field(None, description="Возрастное ограничение")
+    photo: str | None = Field(None, description="Фото")
+    coordinates: list[float] | None = Field(None, description="Координаты")
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию о мероприятии для человека"""
+        lines = []
+        if self.title:
+            lines.append(f"🎭 {self.title}")
+        if self.categories:
+            lines.append(f"   Категория: {', '.join(self.categories)}")
+        if self.start_date:
+            # Форматируем дату красиво
+            date_str = self.start_date.split("T")[0] if "T" in self.start_date else self.start_date
+            time_str = self.start_date.split("T")[1][:5] if "T" in self.start_date else ""
+            lines.append(f"   📅 Дата: {date_str} {time_str}")
+        if self.location_title:
+            lines.append(f"   📍 {self.location_title}")
+        if self.address:
+            lines.append(f"   Адрес: {self.address}")
+        if self.age is not None:
+            lines.append(f"   {self.age}+")
+        if self.description_short:
+            # Убираем HTML теги и обрезаем до 150 символов
+            import re
+            desc = re.sub(r'<[^>]+>', '', self.description_short).strip()
+            if len(desc) > 150:
+                desc = desc[:147] + "..."
+            lines.append(f"   📝 {desc}")
+        return "\n".join(lines)
+
+
+# ============================================================================
+# API Error handling
+# ============================================================================
+
+
+class YazzhAPIError(Exception):
+    """Базовое исключение для ошибок API"""
+
+    def __init__(self, message: str, status_code: int | None = None, response: Any = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.response = response
+
+
+class AddressNotFoundError(YazzhAPIError):
+    """Адрес не найден в базе"""
+
+
+class BuildingNotFoundError(YazzhAPIError):
+    """Здание не найдено по ID"""
+
+
+# ============================================================================
+# Основной клиент API
+# ============================================================================
+
+
+class YazzhAsyncClient:
+    """
+    Асинхронный клиент для работы с API "Я Здесь Живу".
+
+    Примеры использования:
+
+        async with YazzhAsyncClient() as client:
+            # Поиск здания по адресу
+            building = await client.search_building("Невский проспект 1")
+
+            # Получение ближайшего МФЦ
+            mfc = await client.get_nearest_mfc_by_address("Большевиков 68")
+
+            # Поликлиники по адресу
+            clinics = await client.get_polyclinics_by_address("Лиговский 50")
+    """
+
+    def __init__(
+        self,
+        api_geo: str = API_GEO,
+        api_site: str = API_SITE,
+        region_id: str = REGION_ID,
+        timeout: float = 30.0,
+    ):
+        self.api_geo = f'{api_geo.rstrip("/")}/api/v2'
+        self.api_site = api_site.rstrip("/")
+        # Для mancompany используется v1
+        self.api_geo_v1 = f'{api_geo.rstrip("/")}/api/v1'
+        self.region_id = region_id
+        self.timeout = timeout
+        self._client: httpx.AsyncClient | None = None
+
+    async def __aenter__(self) -> YazzhAsyncClient:
+        """Входим в контекстный менеджер, создаём httpx клиент"""
+        self._client = httpx.AsyncClient(
+            timeout=self.timeout,
+            headers={"region": self.region_id},
+        )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Закрываем httpx клиент"""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """Получить HTTP клиент (проверяет, что клиент создан)"""
+        if self._client is None:
+            raise RuntimeError(
+                "YazzhAsyncClient должен использоваться как контекстный менеджер: "
+                "async with YazzhAsyncClient() as client: ..."
+            )
+        return self._client
+
+    # -------------------------------------------------------------------------
+    # Геокодирование: поиск зданий, районов
+    # -------------------------------------------------------------------------
+
+    async def search_building(
+        self,
+        query: str,
+        count: int = 5,
+    ) -> list[BuildingSearchResult]:
+        """
+        Поиск здания по адресу (полнотекстовый поиск).
+
+        Args:
+            query: Адрес для поиска (например: "Невский проспект 1" или "Большевиков 68")
+            count: Максимальное количество результатов (по умолчанию 5, макс 12)
+
+        Returns:
+            Список найденных зданий
+
+        Raises:
+            AddressNotFoundError: Если ничего не найдено
+        """
+        logger.info("api_call", method="search_building", query=query, count=count)
+
+        response = await self.client.get(
+            f"{self.api_geo}/geo/buildings/search/",
+            params={
+                "query": query,
+                "count": min(count, 12),  # API ограничение
+                "region_of_search": self.region_id,
+            },
+        )
+
+        if response.status_code != 200:
+            logger.warning("api_error", method="search_building", status=response.status_code)
+            raise YazzhAPIError(
+                f"Ошибка API при поиске адреса: {response.status_code}",
+                status_code=response.status_code,
+            )
+
+        data = response.json()
+        buildings_data = data.get("data", [])
+
+        if not buildings_data:
+            logger.info("api_empty_result", method="search_building", query=query)
+            raise AddressNotFoundError(f"Адрес не найден: {query}")
+
+        results = [BuildingSearchResult.model_validate(b) for b in buildings_data]
+        logger.info("api_result", method="search_building", count=len(results))
+        return results
+
+    async def search_building_first(self, query: str) -> BuildingSearchResult:
+        """
+        Поиск здания и возврат первого результата.
+
+        Удобный метод для случаев, когда нужен только один результат.
+
+        Args:
+            query: Адрес для поиска
+
+        Returns:
+            Информация о первом найденном здании
+
+        Raises:
+            AddressNotFoundError: Если ничего не найдено
+        """
+        results = await self.search_building(query, count=1)
+        return results[0]
+
+    async def get_building_info(
+        self,
+        building_id: str,
+        output_format: str = "extended",
+    ) -> BuildingInfo:
+        """
+        Получить информацию о здании по его ID.
+
+        Args:
+            building_id: ID здания
+            format: "short" (координаты, район) или "extended" (+ УК и др.)
+
+        Returns:
+            Информация о здании
+        """
+        logger.info("api_call", method="get_building_info", building_id=building_id)
+
+        response = await self.client.get(
+            f"{self.api_geo}/geo/buildings/{building_id}",
+            params={"format": output_format},
+        )
+
+        if response.status_code != 200:
+            raise BuildingNotFoundError(
+                f"Здание не найдено: {building_id}",
+                status_code=response.status_code,
+            )
+
+        data = response.json()
+        # API возвращает data с информацией о здании
+        building_data = data.get("data", data)
+        return BuildingInfo.model_validate(building_data)
+
+    async def get_districts(self) -> list[DistrictInfo]:
+        """
+        Получить список районов Санкт-Петербурга.
+
+        Returns:
+            Список районов с их ID и названиями
+        """
+        logger.info("api_call", method="get_districts")
+
+        response = await self.client.get(f"{self.api_geo}/geo/district/")
+
+        if response.status_code != 200:
+            raise YazzhAPIError(
+                f"Ошибка получения списка районов: {response.status_code}",
+                status_code=response.status_code,
+            )
+
+        data = response.json()
+        districts_data = data.get("data", data)
+
+        if isinstance(districts_data, list):
+            return [DistrictInfo.model_validate(d) for d in districts_data]
+        return []
+
+    # -------------------------------------------------------------------------
+    # Управляющие компании
+    # -------------------------------------------------------------------------
+
+    async def get_management_company(self, building_id: str) -> ManagementCompanyInfo | None:
+        """
+        Получить информацию об управляющей компании по ID здания.
+
+        Args:
+            building_id: ID здания
+
+        Returns:
+            Информация об УК или None если не найдена
+        """
+        logger.info("api_call", method="get_management_company", building_id=building_id)
+
+        response = await self.client.get(
+            f"{self.api_geo_v1}/mancompany/{building_id}",
+            params={"region_of_search": self.region_id},
+        )
+
+        if response.status_code != 200:
+            logger.warning("api_error", method="get_management_company", status=response.status_code)
+            return None
+
+        data = response.json()
+        if not data or (isinstance(data, dict) and not data.get("data")):
+            return None
+
+        uk_data = data.get("data", data)
+        if isinstance(uk_data, list) and uk_data:
+            uk_data = uk_data[0]
+
+        return ManagementCompanyInfo.model_validate(uk_data)
+
+    async def get_management_company_by_address(self, address: str) -> ManagementCompanyInfo | None:
+        """
+        Получить информацию об УК по адресу.
+
+        Комбинирует поиск здания и запрос УК.
+
+        Args:
+            address: Адрес здания
+
+        Returns:
+            Информация об УК или None
+        """
+        try:
+            building = await self.search_building_first(address)
+            return await self.get_management_company(building.building_id)
+        except AddressNotFoundError:
+            return None
+
+    # -------------------------------------------------------------------------
+    # МФЦ
+    # -------------------------------------------------------------------------
+
+    async def get_mfc_by_building(self, building_id: str) -> MFCInfo | None:
+        """
+        Получить ближайший МФЦ по ID здания.
+
+        Args:
+            building_id: ID здания
+
+        Returns:
+            Информация о ближайшем МФЦ
+        """
+        logger.info("api_call", method="get_mfc_by_building", building_id=building_id)
+
+        response = await self.client.get(
+            f"{self.api_site}/mfc/",
+            params={"id_building": building_id},
+        )
+
+        if response.status_code != 200:
+            logger.warning("api_error", method="get_mfc_by_building", status=response.status_code)
+            return None
+
+        payload = response.json()
+
+        # Парсим ответ (может быть list, dict с data, или просто dict)
+        mfc_data = None
+        if isinstance(payload, dict):
+            data = payload.get("data")
+            if isinstance(data, list) and data:
+                mfc_data = data[0]
+            elif data:
+                mfc_data = data
+            elif payload.get("name"):  # Сам payload - это МФЦ
+                mfc_data = payload
+        elif isinstance(payload, list) and payload:
+            mfc_data = payload[0]
+
+        if not mfc_data:
+            return None
+
+        return MFCInfo.model_validate(mfc_data)
+
+    async def get_nearest_mfc_by_address(self, address: str) -> MFCInfo | None:
+        """
+        Найти ближайший МФЦ по адресу пользователя.
+
+        Удобный метод для пользовательских запросов.
+
+        Args:
+            address: Адрес пользователя
+
+        Returns:
+            Информация о ближайшем МФЦ или None
+        """
+        try:
+            building = await self.search_building_first(address)
+            return await self.get_mfc_by_building(building.building_id)
+        except AddressNotFoundError:
+            return None
+
+    async def get_all_mfc(self) -> list[MFCInfo]:
+        """
+        Получить список всех МФЦ в регионе.
+
+        Returns:
+            Список всех МФЦ
+        """
+        logger.info("api_call", method="get_all_mfc")
+
+        response = await self.client.get(f"{self.api_site}/mfc/all/")
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        mfc_list = data.get("data", data)
+
+        if isinstance(mfc_list, list):
+            return [MFCInfo.model_validate(m) for m in mfc_list]
+        return []
+
+    async def get_mfc_by_district(self, district: str) -> list[MFCInfo]:
+        """
+        Получить МФЦ по району.
+
+        Args:
+            district: Название района (например: "Невский", "Адмиралтейский")
+
+        Returns:
+            Список МФЦ в указанном районе
+        """
+        logger.info("api_call", method="get_mfc_by_district", district=district)
+
+        response = await self.client.get(
+            f"{self.api_site}/mfc/district/",
+            params={"district": district},
+        )
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        mfc_list = data.get("data", data)
+
+        if isinstance(mfc_list, list):
+            return [MFCInfo.model_validate(m) for m in mfc_list]
+        return []
+
+    # -------------------------------------------------------------------------
+    # Поликлиники
+    # -------------------------------------------------------------------------
+
+    async def get_polyclinics_by_building(self, building_id: str) -> list[PolyclinicInfo]:
+        """
+        Получить поликлиники, обслуживающие дом по ID здания.
+
+        Args:
+            building_id: ID здания
+
+        Returns:
+            Список поликлиник
+        """
+        logger.info("api_call", method="get_polyclinics_by_building", building_id=building_id)
+
+        response = await self.client.get(
+            f"{self.api_site}/polyclinics/",
+            params={"id": building_id},
+        )
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        if isinstance(data, list):
+            return [PolyclinicInfo.model_validate(p) for p in data]
+        return []
+
+    async def get_polyclinics_by_address(self, address: str) -> list[PolyclinicInfo]:
+        """
+        Получить поликлиники по адресу пользователя.
+
+        Args:
+            address: Адрес пользователя
+
+        Returns:
+            Список поликлиник, обслуживающих данный адрес
+        """
+        try:
+            building = await self.search_building_first(address)
+            return await self.get_polyclinics_by_building(building.building_id)
+        except AddressNotFoundError:
+            return []
+
+    # -------------------------------------------------------------------------
+    # Школы
+    # -------------------------------------------------------------------------
+
+    async def get_linked_schools(self, building_id: str, scheme: int = 1) -> list[SchoolInfo]:
+        """
+        Получить школы, привязанные к дому (для записи в первый класс).
+
+        Args:
+            building_id: ID здания или FIAS ID
+            scheme: 1 = период 2-й волны набора, 2 = остальной период
+
+        Returns:
+            Список прикреплённых школ
+        """
+        logger.info("api_call", method="get_linked_schools", building_id=building_id, scheme=scheme)
+
+        response = await self.client.get(
+            f"{self.api_site}/school/linked/{building_id}",
+            params={"scheme": scheme},
+        )
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        schools_data = data.get("data", data)
+
+        if isinstance(schools_data, list):
+            return [SchoolInfo.model_validate(s) for s in schools_data]
+        return []
+
+    async def get_linked_schools_by_address(
+        self, address: str, scheme: int = 1
+    ) -> list[SchoolInfo]:
+        """
+        Получить прикреплённые школы по адресу.
+
+        Args:
+            address: Адрес пользователя
+            scheme: 1 = 2-я волна набора, 2 = остальной период
+
+        Returns:
+            Список школ
+        """
+        try:
+            building = await self.search_building_first(address)
+            return await self.get_linked_schools(building.building_id, scheme)
+        except AddressNotFoundError:
+            return []
+
+    async def get_school_by_id(self, school_id: int) -> SchoolInfo | None:
+        """
+        Получить информацию о школе по ID.
+
+        Args:
+            school_id: ID школы
+
+        Returns:
+            Информация о школе или None
+        """
+        logger.info("api_call", method="get_school_by_id", school_id=school_id)
+
+        response = await self.client.get(f"{self.api_site}/school/{school_id}")
+
+        if response.status_code != 200:
+            return None
+
+        data = response.json()
+        return SchoolInfo.model_validate(data)
+
+    # -------------------------------------------------------------------------
+    # Справка по дому
+    # -------------------------------------------------------------------------
+
+    async def get_district_info_by_building(self, building_id: str) -> dict[str, Any]:
+        """
+        Получить районную справку по ID здания.
+
+        Включает информацию о районе, муниципалитете и другие данные.
+
+        Args:
+            building_id: ID здания
+
+        Returns:
+            Словарь с информацией о районе
+        """
+        logger.info("api_call", method="get_district_info", building_id=building_id)
+
+        response = await self.client.get(
+            f"{self.api_site}/districts-info/building-id/{building_id}"
+        )
+
+        if response.status_code != 200:
+            return {}
+
+        return response.json()
+
+    # -------------------------------------------------------------------------
+    # Детские сады (ДОУ)
+    # -------------------------------------------------------------------------
+
+    async def get_kindergartens(
+        self,
+        district: str | None = None,
+        age_year: int = 0,
+        age_month: int = 0,
+        legal_form: str = "Государственная",
+        available_spots: int = 1,
+        count: int = 10,
+    ) -> list[KindergartenInfo]:
+        """
+        Получить список детских садов по фильтрам.
+
+        Args:
+            district: Район города (например: "Невский")
+            age_year: Возраст ребёнка, лет (0-9)
+            age_month: Возраст ребёнка, месяцев (0-11)
+            legal_form: Форма собственности ("Государственная", "Частная")
+            available_spots: 1 = только со свободными местами, 0 = все
+            count: Количество результатов
+
+        Returns:
+            Список детских садов
+        """
+        logger.info(
+            "api_call",
+            method="get_kindergartens",
+            district=district,
+            age_year=age_year,
+            age_month=age_month,
+        )
+
+        params: dict[str, Any] = {
+            "legal_form": legal_form,
+            "age_year": age_year,
+            "age_month": age_month,
+            "available_spots": available_spots,
+            "doo_status": "Функционирует",
+        }
+        if district:
+            params["district"] = district
+
+        response = await self.client.get(
+            f"{self.api_site}/dou/",
+            params=params,
+        )
+
+        if response.status_code != 200:
+            logger.warning("api_error", method="get_kindergartens", status=response.status_code)
+            return []
+
+        data = response.json()
+        kindergartens_data = data.get("data", data)
+
+        if isinstance(kindergartens_data, list):
+            return [KindergartenInfo.model_validate(k) for k in kindergartens_data[:count]]
+        return []
+
+    async def get_kindergarten_districts(self) -> list[str]:
+        """
+        Получить список районов с детскими садами.
+
+        Returns:
+            Список названий районов
+        """
+        logger.info("api_call", method="get_kindergarten_districts")
+
+        response = await self.client.get(f"{self.api_site}/dou/district/")
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        if isinstance(data, list):
+            return data
+        return data.get("data", [])
+
+    # -------------------------------------------------------------------------
+    # Афиша (мероприятия)
+    # -------------------------------------------------------------------------
+
+    async def get_events(
+        self,
+        start_date: str,
+        end_date: str,
+        category: str | None = None,
+        free: bool | None = None,
+        kids: bool | None = None,
+        count: int = 10,
+        page: int = 1,
+    ) -> list[EventInfo]:
+        """
+        Получить список мероприятий из афиши.
+
+        Args:
+            start_date: Дата начала поиска (формат: "2025-12-04T00:00:00")
+            end_date: Дата окончания поиска (формат: "2025-12-31T23:59:59")
+            category: Категория мероприятия (например: "Концерт", "Выставка")
+            free: True = только бесплатные, False = только платные
+            kids: True = подходит для детей
+            count: Количество результатов (макс 10)
+            page: Номер страницы
+
+        Returns:
+            Список мероприятий
+        """
+        logger.info(
+            "api_call",
+            method="get_events",
+            start_date=start_date,
+            end_date=end_date,
+            category=category,
+        )
+
+        params: dict[str, Any] = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "count": min(count, 10),  # API ограничение
+            "page": page,
+            "format": "list",
+        }
+        if category:
+            params["categoria"] = category
+        if free is not None:
+            params["free"] = free
+        if kids is not None:
+            params["kids"] = kids
+
+        response = await self.client.get(
+            f"{self.api_site}/afisha/all/",
+            params=params,
+        )
+
+        if response.status_code != 200:
+            logger.warning("api_error", method="get_events", status=response.status_code)
+            return []
+
+        data = response.json()
+        events_data = data.get("data", data)
+
+        if isinstance(events_data, list):
+            # API возвращает {"place": {...}} для каждого элемента
+            result = []
+            for e in events_data:
+                place = e.get("place", e)
+                result.append(EventInfo.model_validate(place))
+            return result
+        return []
+
+    async def get_event_categories(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, int]:
+        """
+        Получить список категорий мероприятий с количеством.
+
+        Args:
+            start_date: Дата начала (опционально)
+            end_date: Дата окончания (опционально)
+
+        Returns:
+            Словарь {категория: количество_мероприятий}
+        """
+        logger.info("api_call", method="get_event_categories")
+
+        params: dict[str, Any] = {}
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+
+        response = await self.client.get(
+            f"{self.api_site}/afisha/category/all/",
+            params=params,
+        )
+
+        if response.status_code != 200:
+            return {}
+
+        data = response.json()
+        if isinstance(data, dict):
+            # API возвращает {"type": [...], "views": {...}}
+            views = data.get("views", {})
+            if views:
+                # Возвращаем views - там есть количество по каждой категории
+                return views
+            # Если views нет, создаём из type с нулевыми значениями
+            return {cat: 0 for cat in data.get("type", [])}
+        return {}
+
+
+# ============================================================================
+# Форматтеры для вывода в чат
+# ============================================================================
+
+
+def format_mfc_for_chat(mfc: MFCInfo | None) -> str:
+    """Форматировать МФЦ для вывода в чат агента"""
+    if mfc is None:
+        return "К сожалению, не удалось найти ближайший МФЦ по указанному адресу."
+    return mfc.format_for_human()
+
+
+def format_polyclinics_for_chat(clinics: list[PolyclinicInfo]) -> str:
+    """Форматировать список поликлиник для чата"""
+    if not clinics:
+        return "По указанному адресу не найдено прикреплённых поликлиник."
+
+    lines = [f"Найдено поликлиник: {len(clinics)}\n"]
+    for clinic in clinics:
+        lines.append(clinic.format_for_human())
+        lines.append("")  # пустая строка между записями
+    return "\n".join(lines)
+
+
+def format_schools_for_chat(schools: list[SchoolInfo]) -> str:
+    """Форматировать список школ для чата"""
+    if not schools:
+        return "По указанному адресу не найдено прикреплённых школ."
+
+    lines = [f"Найдено школ: {len(schools)}\n"]
+    for school in schools:
+        lines.append(school.format_for_human())
+        lines.append("")
+    return "\n".join(lines)
+
+
+def format_building_search_for_chat(buildings: list[BuildingSearchResult]) -> str:
+    """Форматировать результаты поиска адресов для уточнения"""
+    if not buildings:
+        return "Адрес не найден. Пожалуйста, уточните адрес."
+
+    if len(buildings) == 1:
+        return f"Найден адрес: {buildings[0].full_address}"
+
+    lines = ["Найдено несколько адресов. Уточните, какой из них вам нужен:\n"]
+    for i, b in enumerate(buildings, 1):
+        lines.append(f"{i}. {b.full_address}")
+    return "\n".join(lines)
+
+
+def format_kindergartens_for_chat(kindergartens: list[KindergartenInfo]) -> str:
+    """Форматировать список детских садов для чата"""
+    if not kindergartens:
+        return "Детские сады по указанным критериям не найдены."
+
+    lines = [f"Найдено детских садов: {len(kindergartens)}\n"]
+    for kg in kindergartens:
+        lines.append(kg.format_for_human())
+        lines.append("")
+    return "\n".join(lines)
+
+
+def format_events_for_chat(events: list[EventInfo]) -> str:
+    """Форматировать список мероприятий для чата"""
+    if not events:
+        return "Мероприятия по указанным критериям не найдены."
+
+    lines = [f"Найдено мероприятий: {len(events)}\n"]
+    for event in events:
+        lines.append(event.format_for_human())
+        lines.append("")
+    return "\n".join(lines)
+
+
+# ============================================================================
+# Синхронная обёртка для использования в инструментах LangChain
+# ============================================================================
+
+
+async def _run_async(coro):
+    """Запустить асинхронную функцию"""
+    return await coro
+
+
+def get_sync_client_result(async_func):
+    """
+    Хелпер для вызова асинхронных методов клиента синхронно.
+
+    Пример:
+        result = get_sync_client_result(
+            lambda client: client.get_nearest_mfc_by_address("Невский 1")
+        )
+    """
+    import asyncio
+
+    async def _wrapper():
+        async with YazzhAsyncClient() as client:
+            return await async_func(client)
+
+    # Создаём новый event loop
+    return asyncio.run(_wrapper())
+
+
+# ============================================================================
+# Удобные функции для использования в tools
+# ============================================================================
+
+
+async def find_nearest_mfc_async(address: str) -> str:
+    """
+    Асинхронно найти ближайший МФЦ и вернуть отформатированный результат.
+    """
+    async with YazzhAsyncClient() as client:
+        mfc = await client.get_nearest_mfc_by_address(address)
+        if mfc:
+            return json.dumps(mfc.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
+        return "К сожалению, не удалось найти МФЦ по указанному адресу."
+
+
+async def get_polyclinics_async(address: str) -> str:
+    """
+    Асинхронно получить поликлиники по адресу.
+    """
+    async with YazzhAsyncClient() as client:
+        clinics = await client.get_polyclinics_by_address(address)
+        if clinics:
+            return json.dumps(
+                [c.model_dump(exclude_none=True) for c in clinics],
+                ensure_ascii=False,
+                indent=2,
+            )
+        return "По указанному адресу не найдено прикреплённых поликлиник."
+
+
+async def get_schools_async(address: str) -> str:
+    """
+    Асинхронно получить школы по адресу.
+    """
+    async with YazzhAsyncClient() as client:
+        schools = await client.get_linked_schools_by_address(address)
+        if schools:
+            return json.dumps(
+                [s.model_dump(exclude_none=True) for s in schools],
+                ensure_ascii=False,
+                indent=2,
+            )
+        return "По указанному адресу не найдено прикреплённых школ."
+
+
+async def get_management_company_async(address: str) -> str:
+    """
+    Асинхронно получить информацию об УК по адресу.
+    """
+    async with YazzhAsyncClient() as client:
+        uk = await client.get_management_company_by_address(address)
+        if uk:
+            return json.dumps(uk.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
+        return "Информация об управляющей компании не найдена для указанного адреса."
+
+
+async def search_address_async(query: str, count: int = 5) -> str:
+    """
+    Асинхронно найти адреса по запросу.
+    """
+    async with YazzhAsyncClient() as client:
+        try:
+            buildings = await client.search_building(query, count)
+            return json.dumps(
+                [b.model_dump(exclude_none=True) for b in buildings],
+                ensure_ascii=False,
+                indent=2,
+            )
+        except AddressNotFoundError:
+            return "Адрес не найден. Пожалуйста, уточните запрос."
