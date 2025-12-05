@@ -1,10 +1,11 @@
-import pytest
 from datetime import datetime
+from pprint import pprint
+
+import pytest
 
 from app.api.yazz import CityAppClient
 from app.config import REGION_ID as DEFAULT_REGION_ID
 
-from pprint import pprint
 
 @pytest.fixture
 def client():

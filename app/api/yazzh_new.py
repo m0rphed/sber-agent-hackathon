@@ -657,6 +657,133 @@ class SchoolMapInfo(BaseModel):
 
 
 # ============================================================================
+# Tier 2: Красивые места и маршруты
+# ============================================================================
+
+
+class BeautifulPlaceInfo(BaseModel):
+    """Информация о красивом месте Санкт-Петербурга"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int | str = Field(..., description='ID места')
+    title: str | None = Field(None, description='Название')
+    description: str | None = Field(None, description='Описание')
+    address: str | None = Field(None, description='Адрес')
+    district: str | None = Field(None, description='Район')
+    area: str | None = Field(None, description='Область (Районы города/ЛО/Карелия)')
+    coordinates: list[float] | None = Field(None, description='Координаты [lat, lon]')
+    categories: list[str] | None = Field(None, description='Категории')
+    keywords: str | None = Field(None, description='Ключевые слова')
+    site: str | None = Field(None, description='Ссылка на источник')
+    link_to_photos: list[str] | None = Field(None, description='Ссылки на фото')
+    distance: float | None = Field(None, description='Расстояние в км')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию для человека"""
+        lines = []
+        if self.title:
+            lines.append(f'🏛️ {self.title}')
+        if self.categories:
+            lines.append(f'   🏷️ {", ".join(self.categories)}')
+        if self.address:
+            lines.append(f'   📍 {self.address}')
+        elif self.district:
+            lines.append(f'   📍 {self.district}')
+        if self.area and self.area != 'Районы города':
+            lines.append(f'   🗺️ {self.area}')
+        if self.description:
+            desc = self.description
+            if len(desc) > 200:
+                desc = desc[:197] + '...'
+            lines.append(f'   📝 {desc}')
+        if self.distance is not None:
+            lines.append(f'   📏 Расстояние: {self.distance:.1f} км')
+        if self.site:
+            lines.append(f'   🔗 {self.site}')
+        return '\n'.join(lines)
+
+
+class BeautifulPlaceRouteWaypoint(BaseModel):
+    """Точка маршрута"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int | None = Field(None, description='ID точки')
+    title: str | None = Field(None, description='Название')
+    coordinates: list[float] | None = Field(None, description='Координаты')
+
+
+class BeautifulPlaceRouteInfo(BaseModel):
+    """Информация о туристическом маршруте"""
+
+    model_config = ConfigDict(extra='ignore')
+
+    id: int = Field(..., description='ID маршрута')
+    title: str | None = Field(None, description='Название')
+    description: str | None = Field(None, description='Описание')
+    description_for_announcement: str | None = Field(None, description='Краткое описание')
+    theme: str | None = Field(None, description='Тематика маршрута')
+    type: str | None = Field(None, description='Тип маршрута')
+    length_km: int | None = Field(None, description='Протяжённость в км')
+    time_min: int | None = Field(None, description='Длительность в минутах')
+    access_for_disabled: list[str] | None = Field(None, description='Доступность для ОВЗ')
+    district: list[str] | None = Field(None, description='Районы')
+    author_or_organizer: str | None = Field(None, description='Автор/организатор')
+    audio: str | None = Field(None, description='Ссылка на аудиогид')
+    photo: list[str] | None = Field(None, description='Ссылки на фото')
+    start_point: list[float] | None = Field(None, description='Точка старта')
+    waypoints: list[BeautifulPlaceRouteWaypoint] | None = Field(
+        None, description='Точки маршрута'
+    )
+    national_tourist_routes: bool | None = Field(
+        None, description='Входит в национальный справочник'
+    )
+    distance: float | None = Field(None, description='Расстояние до старта в км')
+
+    def format_for_human(self) -> str:
+        """Форматирует информацию для человека"""
+        lines = []
+        if self.title:
+            lines.append(f'🚶 {self.title}')
+        if self.theme:
+            lines.append(f'   🎭 Тема: {self.theme}')
+        if self.type:
+            lines.append(f'   🏷️ Тип: {self.type}')
+        # Длительность и протяжённость
+        route_info = []
+        if self.length_km:
+            route_info.append(f'{self.length_km} км')
+        if self.time_min:
+            hours = self.time_min // 60
+            mins = self.time_min % 60
+            if hours > 0:
+                route_info.append(f'{hours}ч {mins}мин' if mins else f'{hours}ч')
+            else:
+                route_info.append(f'{mins} мин')
+        if route_info:
+            lines.append(f'   📏 {" • ".join(route_info)}')
+        if self.district:
+            lines.append(f'   📍 Районы: {", ".join(self.district)}')
+        if self.audio:
+            lines.append('   🎧 Есть аудиогид')
+        if self.access_for_disabled:
+            lines.append(f'   ♿ Доступно: {", ".join(self.access_for_disabled)}')
+        if self.national_tourist_routes:
+            lines.append('   ⭐ Национальный туристический маршрут')
+        if self.description_for_announcement:
+            desc = self.description_for_announcement
+            if len(desc) > 150:
+                desc = desc[:147] + '...'
+            lines.append(f'   📝 {desc}')
+        if self.distance is not None:
+            lines.append(f'   📏 До старта: {self.distance:.1f} км')
+        if self.author_or_organizer:
+            lines.append(f'   👤 {self.author_or_organizer}')
+        return '\n'.join(lines)
+
+
+# ============================================================================
 # API Error handling
 # ============================================================================
 
@@ -2259,6 +2386,348 @@ class YazzhAsyncClient:
 
         return [SchoolMapInfo.model_validate(s) for s in filtered]
 
+    # ========================================================================
+    # Tier 2: Красивые места и туристические маршруты
+    # ========================================================================
+
+    async def get_beautiful_places(
+        self,
+        *,
+        area: str | None = None,
+        categoria: str | None = None,
+        district: str | None = None,
+        keywords: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        radius_km: int | None = None,
+        count: int = 10,
+        page: int = 1,
+    ) -> tuple[list[BeautifulPlaceInfo], int]:
+        """
+        Получить список красивых мест Санкт-Петербурга.
+
+        Args:
+            area: Область (Районы города | Районы Ленинградской области | Карелия)
+            categoria: Категория (Природа | Архитектура | Развлечения | Гастрономия)
+            district: Район (Центральный район, Приморский район и т.д.)
+            keywords: Ключевое слово (озеро, сад, архитектура, скала)
+            latitude, longitude: Координаты для поиска рядом
+            radius_km: Радиус поиска в км (макс. 500)
+            count: Количество результатов (макс. 1000)
+            page: Номер страницы
+
+        Returns:
+            Кортеж (список BeautifulPlaceInfo, общее количество)
+        """
+        logger.info(
+            'api_call',
+            method='get_beautiful_places',
+            area=area,
+            categoria=categoria,
+            district=district,
+        )
+
+        params: dict[str, Any] = {'count': count, 'page': page}
+
+        if area:
+            params['area'] = area
+        if categoria:
+            params['categoria'] = categoria
+        if district:
+            params['district'] = district
+        if keywords:
+            params['keywords'] = keywords
+        if latitude is not None:
+            params['location_latitude'] = latitude
+        if longitude is not None:
+            params['location_longitude'] = longitude
+        if radius_km is not None:
+            params['location_radius'] = min(radius_km, 500)
+
+        response = await self.client.get(
+            f'{self.api_site}/beautiful_places/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_beautiful_places')
+
+        if response.status_code != 200:
+            return [], 0
+
+        data = response.json()
+        total_count = data.get('count', 0)
+        places_data = data.get('data', [])
+
+        places = []
+        for item in places_data:
+            # Данные обёрнуты в 'place'
+            place_data = item.get('place', item)
+            # Обрабатываем distance из location
+            if 'location' in place_data and place_data['location']:
+                location = place_data['location']
+                if isinstance(location, dict) and 'distance' in location:
+                    place_data['distance'] = location['distance']
+            places.append(BeautifulPlaceInfo.model_validate(place_data))
+
+        return places, total_count
+
+    async def get_beautiful_places_by_address(
+        self,
+        address: str,
+        *,
+        categoria: str | None = None,
+        keywords: str | None = None,
+        radius_km: int = 5,
+        count: int = 10,
+    ) -> tuple[list[BeautifulPlaceInfo], int]:
+        """
+        Найти красивые места рядом с адресом.
+
+        Args:
+            address: Адрес для поиска
+            categoria: Категория (Природа | Архитектура | Развлечения | Гастрономия)
+            keywords: Ключевое слово
+            radius_km: Радиус поиска в км
+            count: Количество результатов
+
+        Returns:
+            Кортеж (список BeautifulPlaceInfo, общее количество)
+        """
+        # Получаем координаты адреса
+        buildings = await self.search_building(address, count=1)
+        if not buildings:
+            return [], 0
+
+        building = buildings[0]
+        if building.latitude is None or building.longitude is None:
+            return [], 0
+
+        return await self.get_beautiful_places(
+            latitude=building.latitude,
+            longitude=building.longitude,
+            radius_km=radius_km,
+            categoria=categoria,
+            keywords=keywords,
+            count=count,
+        )
+
+    async def get_beautiful_place_categories(self) -> list[str]:
+        """
+        Получить список всех категорий красивых мест.
+
+        Returns:
+            Список категорий (Природа, Архитектура, Развлечения, Гастрономия и др.)
+        """
+        logger.info('api_call', method='get_beautiful_place_categories')
+
+        response = await self.client.get(f'{self.api_site}/beautiful_places/categoria/')
+
+        self._check_gateway_errors(response, 'get_beautiful_place_categories')
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        # API возвращает ключ "category", не "categoria"
+        categories = data.get('category', data.get('categoria', []))
+        return categories if isinstance(categories, list) else []
+
+    async def get_beautiful_place_keywords(self) -> list[str]:
+        """
+        Получить список всех ключевых слов для фильтрации красивых мест.
+
+        Returns:
+            Список ключевых слов (озеро, сад, архитектура и др.)
+        """
+        logger.info('api_call', method='get_beautiful_place_keywords')
+
+        response = await self.client.get(f'{self.api_site}/beautiful_places/keywords/')
+
+        self._check_gateway_errors(response, 'get_beautiful_place_keywords')
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        keywords = data.get('keywords', [])
+        return keywords if isinstance(keywords, list) else []
+
+    async def get_beautiful_place_routes(
+        self,
+        *,
+        theme: str | None = None,
+        route_type: str | None = None,
+        access_for_disabled: bool | None = None,
+        audio: bool | None = None,
+        length_km_from: int | None = None,
+        length_km_to: int | None = None,
+        time_min_from: int | None = None,
+        time_min_to: int | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        radius_km: int | None = None,
+        count: int = 10,
+        page: int = 1,
+        expanded: bool = False,
+    ) -> tuple[list[BeautifulPlaceRouteInfo], int]:
+        """
+        Получить список туристических маршрутов.
+
+        Args:
+            theme: Тематика маршрута (можно через запятую)
+            route_type: Тип маршрута
+            access_for_disabled: Доступность для людей с ОВЗ
+            audio: Наличие аудиогида
+            length_km_from, length_km_to: Диапазон протяжённости в км
+            time_min_from, time_min_to: Диапазон длительности в минутах
+            latitude, longitude: Координаты для поиска рядом
+            radius_km: Радиус поиска в км
+            count: Количество результатов
+            page: Номер страницы
+            expanded: Включить полное описание и waypoints
+
+        Returns:
+            Кортеж (список BeautifulPlaceRouteInfo, общее количество)
+        """
+        logger.info(
+            'api_call',
+            method='get_beautiful_place_routes',
+            theme=theme,
+            route_type=route_type,
+        )
+
+        params: dict[str, Any] = {'count': count, 'page': page, 'expanded': expanded}
+
+        if theme:
+            params['theme'] = theme
+        if route_type:
+            params['type'] = route_type
+        if access_for_disabled is not None:
+            params['access_for_disabled'] = access_for_disabled
+        if audio is not None:
+            params['audio'] = audio
+        if length_km_from is not None:
+            params['length_km_from'] = length_km_from
+        if length_km_to is not None:
+            params['length_km_to'] = length_km_to
+        if time_min_from is not None:
+            params['time_min_from'] = time_min_from
+        if time_min_to is not None:
+            params['time_min_to'] = time_min_to
+        if latitude is not None:
+            params['location_latitude'] = latitude
+        if longitude is not None:
+            params['location_longitude'] = longitude
+        if radius_km is not None:
+            params['location_radius'] = min(radius_km, 500)
+
+        response = await self.client.get(
+            f'{self.api_site}/beautiful_places/routes/all/',
+            params=params,
+        )
+
+        self._check_gateway_errors(response, 'get_beautiful_place_routes')
+
+        if response.status_code != 200:
+            return [], 0
+
+        data = response.json()
+        total_count = data.get('count', 0)
+        routes_data = data.get('data', [])
+
+        routes = []
+        for item in routes_data:
+            # Данные обёрнуты в 'place'
+            route_data = item.get('place', item)
+            # Обрабатываем distance из location
+            if 'location' in route_data and route_data['location']:
+                location = route_data['location']
+                if isinstance(location, dict) and 'distance' in location:
+                    route_data['distance'] = location['distance']
+            routes.append(BeautifulPlaceRouteInfo.model_validate(route_data))
+
+        return routes, total_count
+
+    async def get_beautiful_place_routes_by_address(
+        self,
+        address: str,
+        *,
+        theme: str | None = None,
+        route_type: str | None = None,
+        radius_km: int = 10,
+        count: int = 10,
+    ) -> tuple[list[BeautifulPlaceRouteInfo], int]:
+        """
+        Найти туристические маршруты рядом с адресом.
+
+        Args:
+            address: Адрес для поиска
+            theme: Тематика маршрута
+            route_type: Тип маршрута
+            radius_km: Радиус поиска в км
+            count: Количество результатов
+
+        Returns:
+            Кортеж (список BeautifulPlaceRouteInfo, общее количество)
+        """
+        # Получаем координаты адреса
+        buildings = await self.search_building(address, count=1)
+        if not buildings:
+            return [], 0
+
+        building = buildings[0]
+        if building.latitude is None or building.longitude is None:
+            return [], 0
+
+        return await self.get_beautiful_place_routes(
+            latitude=building.latitude,
+            longitude=building.longitude,
+            radius_km=radius_km,
+            theme=theme,
+            route_type=route_type,
+            count=count,
+        )
+
+    async def get_beautiful_place_route_themes(self) -> list[str]:
+        """
+        Получить список тематик маршрутов.
+
+        Returns:
+            Список тематик
+        """
+        logger.info('api_call', method='get_beautiful_place_route_themes')
+
+        response = await self.client.get(f'{self.api_site}/beautiful_places/routes/theme/')
+
+        self._check_gateway_errors(response, 'get_beautiful_place_route_themes')
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        themes = data.get('theme', [])
+        return themes if isinstance(themes, list) else []
+
+    async def get_beautiful_place_route_types(self) -> list[str]:
+        """
+        Получить список типов маршрутов.
+
+        Returns:
+            Список типов
+        """
+        logger.info('api_call', method='get_beautiful_place_route_types')
+
+        response = await self.client.get(f'{self.api_site}/beautiful_places/routes/type/')
+
+        self._check_gateway_errors(response, 'get_beautiful_place_route_types')
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        types = data.get('type', [])
+        return types if isinstance(types, list) else []
+
 
 # ============================================================================
 # Форматтеры для вывода в чат
@@ -2548,6 +3017,48 @@ def format_schools_by_district_for_chat(
 
     for school in schools:
         lines.append(school.format_for_human())
+        lines.append('')
+
+    return '\n'.join(lines)
+
+
+def format_beautiful_places_for_chat(
+    places: list[BeautifulPlaceInfo],
+    total_count: int | None = None,
+) -> str:
+    """Форматировать список красивых мест для чата"""
+    if not places:
+        return 'Красивые места по указанным критериям не найдены.'
+
+    lines = []
+    if total_count is not None:
+        lines.append(f'🏛️ Найдено красивых мест: {total_count} (показано {len(places)})\n')
+    else:
+        lines.append(f'🏛️ Найдено красивых мест: {len(places)}\n')
+
+    for place in places:
+        lines.append(place.format_for_human())
+        lines.append('')
+
+    return '\n'.join(lines)
+
+
+def format_beautiful_routes_for_chat(
+    routes: list[BeautifulPlaceRouteInfo],
+    total_count: int | None = None,
+) -> str:
+    """Форматировать список туристических маршрутов для чата"""
+    if not routes:
+        return 'Туристические маршруты по указанным критериям не найдены.'
+
+    lines = []
+    if total_count is not None:
+        lines.append(f'🚶 Найдено маршрутов: {total_count} (показано {len(routes)})\n')
+    else:
+        lines.append(f'🚶 Найдено маршрутов: {len(routes)}\n')
+
+    for route in routes:
+        lines.append(route.format_for_human())
         lines.append('')
 
     return '\n'.join(lines)

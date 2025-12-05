@@ -16,28 +16,17 @@ from langchain_gigachat import GigaChat
 from app.config import get_agent_config
 from app.logging_config import get_logger
 from app.rag.config import RAGConfig, get_rag_config
+from prompts import load_prompt
 
 logger = get_logger(__name__)
 
 
-# Query Rewriter
+# Query Rewriter - загружаем prompt из файла
+_query_rewrite_system = load_prompt("rag/query_rewrite.txt")
 
 QUERY_REWRITE_PROMPT = ChatPromptTemplate.from_messages(
     [
-        (
-            'system',
-            """Ты — помощник для улучшения поисковых запросов.
-
-Твоя задача: переформулировать запрос пользователя так, чтобы он лучше подходил
-для поиска в базе знаний государственных услуг Санкт-Петербурга.
-
-Правила:
-1. Сохрани смысл исходного запроса
-2. Добавь конкретику (документы, сроки, требования)
-3. Используй официальную терминологию госуслуг
-4. Запрос должен быть на русском языке
-5. Верни ТОЛЬКО переформулированный запрос, без пояснений""",
-        ),
+        ('system', _query_rewrite_system),
         ('human', 'Исходный запрос: {query}\n\nПереформулированный запрос:'),
     ]
 )
@@ -93,26 +82,12 @@ class QueryRewriter:
 
 
 # Document Grader (Batch version — один вызов LLM вместо N)
+# Загружаем prompt из файла
+_document_grade_system = load_prompt("rag/document_grade.txt")
 
 DOCUMENT_BATCH_GRADE_PROMPT = ChatPromptTemplate.from_messages(
     [
-        (
-            'system',
-            """Ты — эксперт по оценке релевантности документов для поиска госуслуг.
-
-Твоя задача: для каждого документа определить, может ли он быть полезен для ответа на вопрос.
-
-ВАЖНО: Будь снисходительным! Если документ хотя бы частично связан с темой — отмечай как релевантный.
-
-Примеры релевантности:
-- Вопрос про загранпаспорт, документ про паспорт РФ → релевантен (связанная тема)
-- Вопрос про пенсию, документ про выплаты → релевантен (связанная тема)
-- Вопрос про загранпаспорт, документ про регистрацию автомобиля → НЕ релевантен
-
-ФОРМАТ ОТВЕТА:
-Верни ТОЛЬКО список номеров релевантных документов через запятую.
-Пример: "1, 3, 4" или "1, 2" или "нет" если ни один не релевантен.""",
-        ),
+        ('system', _document_grade_system),
         (
             'human',
             """Вопрос пользователя: {query}

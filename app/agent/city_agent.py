@@ -290,7 +290,7 @@ def chat_with_memory(
         'chat_with_memory_context',
         session_id=session_id,
         chat_history=[
-            {'type': m.type, 'content': m.content[:150] + '...' if len(m.content) > 150 else m.content}
+            {'type': m.type, 'content': m.content[:350] + '...' if len(m.content) > 350 else m.content}
             for m in chat_history[-6:]  # последние 6 сообщений (3 обмена)
         ] if chat_history else [],
     )

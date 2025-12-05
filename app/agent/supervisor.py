@@ -36,6 +36,7 @@ from app.agent.state import (
 from app.config import get_agent_config
 from app.logging_config import get_logger
 from app.rag.config import get_rag_config
+from prompts import load_prompt
 
 logger = get_logger(__name__)
 
@@ -43,6 +44,13 @@ logger = get_logger(__name__)
 # =============================================================================
 # Enums & Constants
 # =============================================================================
+
+
+# Максимальное количество попыток уточнения
+MAX_CLARIFICATION_ATTEMPTS = 2
+
+# Загружаем prompt для conversation fallback
+CONVERSATION_SYSTEM_PROMPT = load_prompt("conversation.txt")
 
 
 class Intent(str, Enum):
@@ -144,6 +152,11 @@ class SupervisorState(AgentState):
     # Supervisor-specific: извлечённые параметры
     extracted_params: dict[str, Any]  # Адрес, район, категория и т.д.
 
+    # Clarification loop
+    needs_clarification: bool  # True если нужно уточнение
+    clarification_message: str | None  # Сообщение для уточнения
+    clarification_attempts: int  # Счётчик попыток уточнения
+
 
 # =============================================================================
 # Node Functions
@@ -186,70 +199,82 @@ def check_toxicity_node(state: SupervisorState) -> dict:
 
 def classify_intent_node(state: SupervisorState) -> dict:
     """
-    Узел 2: Классификация намерения пользователя.
+    Узел 2: Классификация намерения пользователя с Structured Output.
 
-    Использует LLM для точной классификации и извлечения параметров.
+    Использует Pydantic модель CityQueryClassification для точной классификации
+    и извлечения сущностей (адрес, район, категория).
     """
-    from app.agent.llm import get_llm_for_classification
+    from app.agent.intent_classifier import (
+        classify_intent_structured,
+        check_required_slots,
+        get_clarification_message,
+        to_legacy_intent,
+        to_legacy_params,
+    )
 
     query = get_last_user_message(state)
 
-    llm = get_llm_for_classification()
-    # TODO: автоматическое составления промпта для классификации на основе реализованных Intent и INTENT_KEYWORDS
-    # TODO: посмотреть есть ли решение в langchain
-    classification_prompt = f"""Ты - классификатор намерений пользователя для городского помощника Санкт-Петербурга.
-
-Категории:
-1. mfc_search - пользователь ищет МФЦ (многофункциональный центр), адрес МФЦ, часы работы МФЦ
-2. pensioner_categories - пользователь спрашивает о категориях услуг для пенсионеров
-3. pensioner_services - пользователь ищет конкретные услуги/занятия для пенсионеров в районе
-4. rag_search - вопросы о госуслугах, документах, процедурах оформления, льготах, справках
-5. conversation - приветствия, благодарности, общие вопросы о боте, прощания
-
-Запрос пользователя: "{query}"
-
-Ответь ОДНИМ словом - название категории (mfc_search, pensioner_categories, pensioner_services, rag_search или conversation):"""
+    logger.info('supervisor_node', node='classify_intent', query=query[:100])
 
     try:
-        response = llm.invoke(classification_prompt)
-        content = response.content
-        # Обработка разных типов content
-        if isinstance(content, list):
-            content = str(content[0]) if content else ''
-        intent_str = content.strip().lower()
+        # Используем structured classification
+        classification = classify_intent_structured(query)
 
-        # Маппинг ответа LLM на Intent
-        intent_map = {
-            'mfc_search': Intent.MFC_SEARCH,
-            'pensioner_categories': Intent.PENSIONER_CATEGORIES,
-            'pensioner_services': Intent.PENSIONER_SERVICES,
-            'rag_search': Intent.RAG_SEARCH,
-            'conversation': Intent.CONVERSATION,
-        }
+        # Проверяем, нужно ли уточнение
+        if classification.needs_clarification or not check_required_slots(classification):
+            clarification_msg = (
+                classification.clarification_message
+                or get_clarification_message(classification)
+            )
+            logger.info(
+                'clarification_needed',
+                intent=classification.intent,
+                message=clarification_msg,
+            )
+            return {
+                'intent': 'clarification',
+                'intent_confidence': classification.confidence,
+                'extracted_params': to_legacy_params(classification),
+                'clarification_message': clarification_msg,
+                'metadata': {
+                    **state.get('metadata', {}),
+                    'classification_method': 'structured',
+                    'original_intent': classification.intent,
+                },
+            }
 
-        detected_intent = intent_map.get(intent_str, Intent.RAG_SEARCH)
-
+        # Всё хорошо — возвращаем результат
         logger.info(
             'intent_classified',
-            method='llm',
-            intent=detected_intent.value,
-            llm_response=intent_str,
+            method='structured',
+            intent=classification.intent,
+            confidence=classification.confidence,
+            address=classification.address,
+            district=classification.district,
         )
 
         return {
-            'intent': detected_intent.value,
-            'intent_confidence': 0.9,
-            'extracted_params': _extract_params_simple(query, detected_intent),
-            'metadata': {**state.get('metadata', {}), 'classification_method': 'llm'},
+            'intent': to_legacy_intent(classification.intent),
+            'intent_confidence': classification.confidence,
+            'extracted_params': to_legacy_params(classification),
+            'metadata': {
+                **state.get('metadata', {}),
+                'classification_method': 'structured',
+                'new_intent': classification.intent,
+            },
         }
 
     except Exception as e:
-        logger.error('intent_classification_failed', error=str(e))
-        # Fallback на RAG
+        logger.error('intent_classification_failed', error=str(e), exc_info=True)
+        # Fallback на keyword classification
+        detected_intent = _keyword_classification(query)
+        if detected_intent == Intent.UNKNOWN:
+            detected_intent = Intent.RAG_SEARCH
+
         return {
-            'intent': Intent.RAG_SEARCH.value,
+            'intent': detected_intent.value,
             'intent_confidence': 0.5,
-            'extracted_params': {},
+            'extracted_params': _extract_params_simple(query, detected_intent),
             'metadata': {**state.get('metadata', {}), 'classification_method': 'fallback'},
         }
 
@@ -316,9 +341,12 @@ def _extract_params_simple(query: str, intent: Intent) -> dict:
 
 def api_handler_node(state: SupervisorState) -> dict:
     """
-    Узел: Обработка API запросов (МФЦ, пенсионеры).
+    Узел: Обработка API запросов (все городские сервисы).
+
+    Использует tool_dispatcher для централизованного вызова tools.
     """
     from app.agent.resilience import create_error_state_update
+    from app.agent.tool_dispatcher import handle_api_intent
 
     intent = state['intent']
     params = state.get('extracted_params', {})
@@ -326,14 +354,17 @@ def api_handler_node(state: SupervisorState) -> dict:
     logger.info('supervisor_node', node='api_handler', intent=intent, params=params)
 
     try:
-        if intent == Intent.MFC_SEARCH.value:
-            result = _handle_mfc_search(params)
-        elif intent == Intent.PENSIONER_CATEGORIES.value:
-            result = _handle_pensioner_categories()
-        elif intent == Intent.PENSIONER_SERVICES.value:
-            result = _handle_pensioner_services(params)
-        else:
-            result = 'Не удалось определить тип запроса к API.'
+        # Единый dispatch через tool_dispatcher
+        result, needs_clarification = handle_api_intent(intent, params)
+
+        if needs_clarification:
+            # Возвращаем запрос на уточнение
+            return {
+                'needs_clarification': True,
+                'clarification_message': result,
+                'tool_result': None,
+                'metadata': {**state.get('metadata', {}), 'handler': 'api', 'needs_clarification': True},
+            }
 
         logger.info('api_handler_complete', result_length=len(result))
         return {
@@ -343,49 +374,9 @@ def api_handler_node(state: SupervisorState) -> dict:
 
     except Exception as e:
         logger.error('api_handler_error', error=str(e), exc_info=True)
-        # Используем resilience для graceful error handling
         error_update = create_error_state_update(e, handler='api')
-        # Сохраняем существующие метаданные
         error_update['metadata'] = {**state.get('metadata', {}), **error_update['metadata']}
         return error_update
-
-
-def _handle_mfc_search(params: dict) -> str:
-    """Поиск ближайшего МФЦ."""
-    from app.tools.city_tools import find_nearest_mfc_tool
-
-    address = params.get('address', '')
-
-    if not address:
-        return (
-            'Для поиска ближайшего МФЦ укажите, пожалуйста, ваш адрес. '
-            'Например: "Найди МФЦ рядом с Невским проспектом 1"'
-        )
-
-    return find_nearest_mfc_tool.invoke(address)
-
-
-def _handle_pensioner_categories() -> str:
-    """Получение категорий услуг для пенсионеров."""
-    from app.tools.city_tools import get_pensioner_categories_tool
-
-    return get_pensioner_categories_tool.invoke({})
-
-
-def _handle_pensioner_services(params: dict) -> str:
-    """Поиск услуг для пенсионеров."""
-    from app.tools.city_tools import get_pensioner_services_tool
-
-    district = params.get('district', '')
-
-    if not district:
-        return (
-            'Для поиска услуг для пенсионеров укажите район. '
-            'Например: "Какие занятия для пенсионеров есть в Невском районе?"'
-        )
-
-    # По умолчанию ищем все категории
-    return get_pensioner_services_tool.invoke({'district': district, 'categories': ''})
 
 
 def rag_search_node(state: SupervisorState) -> dict:
@@ -458,12 +449,8 @@ def conversation_node(state: SupervisorState) -> dict:
     # Формируем контекст с историей
     messages = []
 
-    # System prompt
-    system_message = """Ты — дружелюбный городской помощник Санкт-Петербурга.
-Ты помогаешь жителям города с информацией о госуслугах, МФЦ и городских сервисах.
-Отвечай кратко, вежливо и по делу. Если не знаешь ответ — честно скажи об этом."""
-
-    messages.append(HumanMessage(content=f'[SYSTEM] {system_message}'))
+    # System prompt из файла
+    messages.append(HumanMessage(content=f'[SYSTEM] {CONVERSATION_SYSTEM_PROMPT}'))
 
     # Добавляем историю (последние N сообщений из конфига)
     context_size = agent_config.memory.context_window_size
@@ -524,15 +511,79 @@ def intent_router(state: SupervisorState) -> str:
     """Роутер по намерению пользователя."""
     intent = state.get('intent', Intent.UNKNOWN.value)
 
-    if intent in [Intent.MFC_SEARCH.value, Intent.PENSIONER_CATEGORIES.value, Intent.PENSIONER_SERVICES.value]:
+    # Новый intent: уточнение
+    if intent == 'clarification':
+        return 'clarification'
+
+    # API intents (legacy + новые)
+    api_intents = [
+        Intent.MFC_SEARCH.value,
+        Intent.PENSIONER_CATEGORIES.value,
+        Intent.PENSIONER_SERVICES.value,
+        # Новые intents которые тоже идут в api_handler
+        'search_mfc',
+        'search_polyclinic',
+        'search_school',
+        'search_kindergarten',
+        'search_management_company',
+        'pet_parks',
+        'vet_clinics',
+        'road_works',
+        'beautiful_places',
+        'tourist_routes',
+        'sportgrounds',
+        'disconnections',
+        'search_events',
+        'search_sport_events',
+        'pensioner_categories',
+        'pensioner_services',
+        'memorable_dates',
+        'district_info',
+    ]
+
+    if intent in api_intents:
         return 'api'
-    elif intent == Intent.RAG_SEARCH.value:
+    elif intent == Intent.RAG_SEARCH.value or intent == 'rag_search':
         return 'rag'
-    elif intent == Intent.CONVERSATION.value:
+    elif intent == Intent.CONVERSATION.value or intent == 'conversation':
         return 'conversation'
     else:
         # Fallback на RAG
         return 'rag'
+
+
+def clarification_node(state: SupervisorState) -> dict:
+    """
+    Узел для запроса уточнения у пользователя.
+
+    Инкрементирует счётчик попыток и возвращает уточняющий вопрос.
+    Граф ожидает следующего сообщения пользователя и снова классифицирует.
+    """
+    from langchain_core.messages import AIMessage
+
+    clarification_msg = state.get('clarification_message', 'Уточните, пожалуйста, ваш запрос.')
+    current_attempts = state.get('clarification_attempts', 0)
+    new_attempts = current_attempts + 1
+
+    logger.info(
+        'clarification_requested',
+        message=clarification_msg,
+        attempt=new_attempts,
+        max_attempts=MAX_CLARIFICATION_ATTEMPTS,
+    )
+
+    # Добавляем AI сообщение в историю (чтобы пользователь видел вопрос)
+    return {
+        'messages': [AIMessage(content=clarification_msg)],
+        'clarification_attempts': new_attempts,
+        'needs_clarification': True,
+        'tool_result': clarification_msg,
+        'metadata': {
+            **state.get('metadata', {}),
+            'handler': 'clarification',
+            'clarification_attempt': new_attempts,
+        },
+    }
 
 
 # =============================================================================
@@ -544,6 +595,27 @@ def toxic_response_node(state: SupervisorState) -> dict:
     """Узел для ответа на токсичный запрос."""
     response = state.get('toxicity_response') or 'Извините, я не могу обработать этот запрос.'
     return create_ai_response(response)
+
+
+def clarification_router(state: SupervisorState) -> str:
+    """
+    Роутер после узла clarification.
+
+    Определяет, продолжить ли цикл уточнения или завершить.
+    """
+    attempts = state.get('clarification_attempts', 0)
+
+    if attempts >= MAX_CLARIFICATION_ATTEMPTS:
+        # Достигли лимита попыток — идём в conversation для fallback ответа
+        logger.warning(
+            'clarification_max_attempts_reached',
+            attempts=attempts,
+            max=MAX_CLARIFICATION_ATTEMPTS,
+        )
+        return 'max_attempts'
+
+    # Ещё есть попытки — возвращаемся к classify_intent (ждём ответ пользователя)
+    return 'continue'
 
 
 # =============================================================================
@@ -576,6 +648,7 @@ def create_supervisor_graph(checkpointer=None):
     builder.add_node('check_toxicity', check_toxicity_node)  # Без retry - локальная логика
     builder.add_node('toxic_response', toxic_response_node)  # Без retry - просто возврат
     builder.add_node('classify_intent', classify_intent_node, retry_policy=llm_retry)  # LLM вызов
+    builder.add_node('clarification', clarification_node)  # Без retry - просто возврат сообщения
     builder.add_node('api_handler', api_handler_node, retry_policy=api_retry)  # Внешние API
     builder.add_node('rag_search', rag_search_node, retry_policy=llm_retry)  # LLM + embeddings
     builder.add_node('conversation', conversation_node, retry_policy=llm_retry)  # LLM вызов
@@ -604,6 +677,7 @@ def create_supervisor_graph(checkpointer=None):
             'api': 'api_handler',
             'rag': 'rag_search',
             'conversation': 'conversation',
+            'clarification': 'clarification',
         },
     )
 
@@ -611,6 +685,16 @@ def create_supervisor_graph(checkpointer=None):
     builder.add_edge('api_handler', 'generate_response')
     builder.add_edge('rag_search', 'generate_response')
     builder.add_edge('conversation', 'generate_response')
+
+    # Clarification loop: после уточнения либо ждём новый запрос, либо fallback
+    builder.add_conditional_edges(
+        'clarification',
+        clarification_router,
+        {
+            'continue': END,  # Ждём следующего сообщения пользователя
+            'max_attempts': 'conversation',  # Fallback на conversation
+        },
+    )
 
     builder.add_edge('generate_response', END)
 
@@ -694,6 +778,10 @@ def invoke_supervisor(
         'final_response': None,
         'metadata': {},
         'extracted_params': {},
+        # Clarification loop
+        'needs_clarification': False,
+        'clarification_message': None,
+        'clarification_attempts': 0,
     }
 
     logger.info(

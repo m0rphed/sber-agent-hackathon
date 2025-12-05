@@ -1190,6 +1190,171 @@ def get_pet_parks_v2(
 
 
 # ============================================================================
+# Tier 2: Красивые места и туристические маршруты
+# ============================================================================
+
+
+@tool
+def get_beautiful_places_v2(
+    address: str | None = None,
+    category: str | None = None,
+    district: str | None = None,
+    keyword: str | None = None,
+    radius: int = 10000,
+    count: int = 10,
+) -> str:
+    """Найти красивые и интересные места Санкт-Петербурга.
+
+    Поиск достопримечательностей, интересных мест, объектов культуры и природы.
+    Можно искать рядом с адресом или по категориям/районам.
+
+    Args:
+        address: Адрес для поиска рядом (опционально). Примеры: "Невский проспект 1", "Дворцовая площадь"
+        category: Категория места (опционально):
+            - "Природа" - парки, сады, озёра, ландшафты
+            - "Архитектура" - исторические здания, дворцы, соборы
+            - "Развлечения" - музеи, театры, развлекательные объекты
+            - "Гастрономия" - рестораны, кафе, кулинарные места
+        district: Район Санкт-Петербурга (опционально). Пример: "Центральный район"
+        keyword: Ключевое слово для поиска (опционально): "озеро", "сад", "дворец", "скала"
+        radius: Радиус поиска в метрах от адреса (по умолчанию 10000)
+        count: Количество результатов (по умолчанию 10, максимум 50)
+
+    Returns:
+        Список красивых мест с описаниями, адресами и категориями
+    """
+    from app.api.yazzh_new import (
+        format_beautiful_places_for_chat,
+    )
+
+    logger.info(
+        'tool_called',
+        tool='get_beautiful_places_v2',
+        address=address,
+        category=category,
+        district=district,
+    )
+
+    # Ограничиваем количество
+    count = min(count, 50)
+    # Конвертируем метры в км
+    radius_km = max(1, radius // 1000)
+
+    async def _get_places() -> str:
+        async with YazzhAsyncClient() as client:
+            if address:
+                # Поиск по адресу
+                places, total = await client.get_beautiful_places_by_address(
+                    address=address,
+                    categoria=category,
+                    keywords=keyword,
+                    radius_km=radius_km,
+                    count=count,
+                )
+            else:
+                # Поиск по фильтрам
+                places, total = await client.get_beautiful_places(
+                    categoria=category,
+                    district=district,
+                    keywords=keyword,
+                    count=count,
+                )
+            return format_beautiful_places_for_chat(places, total)
+
+    try:
+        result = asyncio.run(_get_places())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_beautiful_places_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_beautiful_places_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_beautiful_place_routes_v2(
+    address: str | None = None,
+    theme: str | None = None,
+    route_type: str | None = None,
+    accessible: bool | None = None,
+    with_audio: bool | None = None,
+    max_length_km: int | None = None,
+    max_duration_hours: int | None = None,
+    radius: int = 20000,
+    count: int = 10,
+) -> str:
+    """Найти туристические маршруты по Санкт-Петербургу.
+
+    Поиск пеших, велосипедных и других маршрутов для прогулок и экскурсий.
+
+    Args:
+        address: Адрес для поиска маршрутов рядом (опционально). Пример: "Невский проспект 1"
+        theme: Тематика маршрута (опционально): архитектура, история, природа, искусство
+        route_type: Тип маршрута (опционально): пешеходный, велосипедный, автомобильный
+        accessible: Только маршруты, доступные для людей с ОВЗ (опционально)
+        with_audio: Только маршруты с аудиогидом (опционально)
+        max_length_km: Максимальная длина маршрута в километрах (опционально)
+        max_duration_hours: Максимальная продолжительность в часах (опционально)
+        radius: Радиус поиска в метрах от адреса (по умолчанию 20000)
+        count: Количество результатов (по умолчанию 10, максимум 50)
+
+    Returns:
+        Список маршрутов с описанием, длиной, продолжительностью и тематикой
+    """
+    from app.api.yazzh_new import (
+        format_beautiful_routes_for_chat,
+    )
+
+    logger.info(
+        'tool_called',
+        tool='get_beautiful_place_routes_v2',
+        address=address,
+        theme=theme,
+        route_type=route_type,
+    )
+
+    # Ограничиваем количество
+    count = min(count, 50)
+    # Конвертируем метры в км
+    radius_km = max(1, radius // 1000)
+    # Конвертируем часы в минуты
+    max_duration_min = max_duration_hours * 60 if max_duration_hours else None
+
+    async def _get_routes() -> str:
+        async with YazzhAsyncClient() as client:
+            if address:
+                # Поиск по адресу
+                routes, total = await client.get_beautiful_place_routes_by_address(
+                    address=address,
+                    theme=theme,
+                    route_type=route_type,
+                    radius_km=radius_km,
+                    count=count,
+                )
+            else:
+                # Поиск по фильтрам
+                routes, total = await client.get_beautiful_place_routes(
+                    theme=theme,
+                    route_type=route_type,
+                    access_for_disabled=accessible,
+                    audio=with_audio,
+                    length_km_to=max_length_km,
+                    time_min_to=max_duration_min,
+                    count=count,
+                )
+            return format_beautiful_routes_for_chat(routes, total)
+
+    try:
+        result = asyncio.run(_get_routes())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_beautiful_place_routes_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_beautiful_place_routes_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
 # Экспорт инструментов
 # ============================================================================
 
@@ -1222,4 +1387,7 @@ city_tools_v2 = [
     get_schools_by_district_v2,
     get_vet_clinics_v2,
     get_pet_parks_v2,
+    # Tier 2: Красивые места и маршруты
+    get_beautiful_places_v2,
+    get_beautiful_place_routes_v2,
 ]

@@ -1,5 +1,8 @@
 """
-Hybrid Agent Graph - Вариант 3: Agent внутри Graph.
+[LEGACY] Hybrid Agent Graph с keyword-based классификацией.
+
+⚠️  DEPRECATED: Этот модуль оставлен для справки.
+    Используйте app.agent.hybrid (с LLM-классификацией) вместо этого.
 
 Архитектура:
     START → check_toxicity → classify_intent → [router]
@@ -13,24 +16,20 @@ Hybrid Agent Graph - Вариант 3: Agent внутри Graph.
                                                   ↓
                                            generate_response → END
 
-Отличия от Supervisor (Вариант 2):
-- tool_agent_node использует ReAct агента для сложных API запросов
-- Агент может делать несколько tool calls в цепочке
-- Более гибкий, но дороже по API вызовам
+Отличие от hybrid.py:
+- Этот модуль использует KEYWORD MATCHING для classify_intent
+- hybrid.py использует LLM с structured output (более точный)
 
 Когда использовать:
-- Когда нужны сложные цепочки API вызовов
-- Когда агент должен сам решать какой tool использовать
-- Когда важна гибкость, а не скорость
+- Если нужна максимальная скорость (без LLM для классификации)
+- Для fallback если LLM недоступен
 """
 
 from enum import Enum
-from typing import Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import create_react_agent
-from pydantic import BaseModel, Field
 
 from app.agent.state import (
     AgentState,
@@ -59,18 +58,6 @@ class HybridIntent(str, Enum):
     RAG_SEARCH = 'rag_search'  # Поиск по госуслугам
     CONVERSATION = 'conversation'  # Обычный разговор
 
-class IntentLLMOutput(BaseModel):
-    """Структура ответа от LLM-роутера."""
-    intent: Literal['tool_agent', 'rag_search', 'conversation']
-    confidence: float = Field(ge=0.0, le=1.0)
-    reason: str
-
-
-# Порог уверенности, ниже которого считаем, что лучше отправить запрос в RAG
-INTENT_CONFIDENCE_THRESHOLD: float = 0.6
-
-# Сколько сообщений истории отдаём роутеру
-INTENT_HISTORY_MESSAGES: int = 4
 
 # Ключевые слова для классификации
 HYBRID_INTENT_KEYWORDS = {
@@ -170,131 +157,32 @@ def check_toxicity_node(state: HybridState) -> dict:
         'metadata': {**state.get('metadata', {}), 'toxicity_blocked': False},
     }
 
-def _classify_intent_with_llm(
-    query: str,
-    history: list[BaseMessage],
-) -> IntentLLMOutput | None:
-    """
-    Классификация намерения с помощью GigaChat (LLM-роутера).
-
-    Parameters
-    ----------
-    query : str
-        Последний запрос пользователя (как он есть).
-    history : list[BaseMessage]
-        История диалога.
-
-    Returns
-    -------
-    IntentLLMOutput | None
-        Структурированный ответ или None, если произошла ошибка.
-    """
-    try:
-        from langchain_core.prompts import ChatPromptTemplate
-
-        from app.agent.llm import get_llm_for_intent_routing
-
-        llm = get_llm_for_intent_routing().with_structured_output(IntentLLMOutput)
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    'system',
-                    """Ты — классификатор намерений городского помощника Санкт-Петербурга.
-
-Твоя задача — по диалогу и последнему сообщению пользователя выбрать,
-какой обработчик нужно вызвать.
-
-Варианты intent:
-- "tool_agent" — если пользователю нужно:
-  • найти ближайший МФЦ, его адрес или режим работы;
-  • подобрать услуги или активности для пенсионеров по адресу или району.
-- "rag_search" — если вопрос про оформление документов, льготы, пособия,
-  требования, порядок действий, нужные документы и т.п.
-- "conversation" — если это приветствие, благодарность, small talk
-  или вопрос о самом боте.
-
-Всегда возвращай СТРОГИЙ JSON со следующими полями:
-- intent: "tool_agent" | "rag_search" | "conversation"
-- confidence: число от 0 до 1 (насколько ты уверен)
-- reason: короткое объяснение, почему выбран именно этот intent.
-""",
-                ),
-                (
-                    'human',
-                    """Ниже приведена часть диалога (от старых сообщений к новым):
-
-{dialog}
-
-Последнее сообщение пользователя:
-{last_message}""",
-                ),
-            ]
-        )
-
-        # Собираем компактное текстовое представление истории
-        dialog_lines: list[str] = []
-        for msg in history[-INTENT_HISTORY_MESSAGES:]:
-            role = getattr(msg, 'type', 'human')
-            dialog_lines.append(f'{role}: {msg.content}')
-
-        dialog_text = '\n'.join(dialog_lines) if dialog_lines else '(диалог пуст)'
-
-        chain = prompt | llm
-        result: IntentLLMOutput = chain.invoke(
-            {
-                'dialog': dialog_text,
-                'last_message': query
-            }
-        )
-        return result
-
-    except Exception as e:
-        logger.exception('intent_llm_failed', error=str(e))
-        return None
-
 
 def classify_intent_node(state: HybridState) -> dict:
-    """
-    Узел 2: Классификация намерения (упрощённая для гибрида)
-    """
-    query_raw = get_last_user_message(state).lower()
-    logger.info('hybrid_node', node='classify_intent', query=query_raw[:100])
+    """Узел 2: Классификация намерения (упрощённая для гибрида)."""
+    query = get_last_user_message(state).lower()
 
-    # классификация с помощью обращению к LLM
-    # INFO: detected_intent = HybridIntent.RAG_SEARCH  # default
-    chat_history = get_chat_history(state, max_messages=INTENT_HISTORY_MESSAGES)
+    logger.info('hybrid_node', node='classify_intent', query=query[:100])
 
-    # LLM не ответил / не распарсился — безопасный fallback
-    intent = HybridIntent.RAG_SEARCH.value
-    confidence = 0.5
-    reason = 'llm_error_or_parse_failed'
-    method = 'fallback'
+    # Простая классификация по ключевым словам
+    detected_intent = HybridIntent.RAG_SEARCH  # default
 
-    llm_result = _classify_intent_with_llm(query_raw, chat_history)
+    for intent, keywords in HYBRID_INTENT_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in query:
+                detected_intent = intent
+                break
+        if detected_intent != HybridIntent.RAG_SEARCH:
+            break
 
-    if llm_result is not None:
-        intent = llm_result.intent
-        confidence = float(llm_result.confidence)
-        reason = llm_result.reason
-        method = 'llm'
-    # else:
-
-    logger.info(
-        'intent_classified',
-        intent=intent,
-        method=method,
-        confidence=confidence,
-    )
+    logger.info('intent_classified', intent=detected_intent.value, method='keywords')
 
     return {
-        'intent': intent,
-        'intent_confidence': confidence,
-        'metadata': {
-            **state.get('metadata', {}),
-            'classification_method': method,
-            'intent_reason': reason,
-        },
+        'intent': detected_intent.value,
+        'intent_confidence': 0.8,
+        'metadata': {**state.get('metadata', {}), 'classification_method': 'keywords'},
     }
+
 
 def tool_agent_node(state: HybridState) -> dict:
     """
@@ -304,7 +192,7 @@ def tool_agent_node(state: HybridState) -> dict:
     запросов, требующих вызова API (МФЦ, пенсионеры и т.д.)
     """
     from app.agent.llm import get_llm_for_tools
-    from app.tools.city_tools import ALL_TOOLS as API_TOOLS
+    from app.tools.city_tools_v2 import city_tools_v2 as API_TOOLS
 
     agent_config = get_agent_config()
     query = get_last_user_message(state)
@@ -321,8 +209,14 @@ def tool_agent_node(state: HybridState) -> dict:
             model=llm,
             tools=API_TOOLS,
             prompt="""Ты — городской помощник Санкт-Петербурга.
-У тебя есть доступ к API для поиска МФЦ и услуг для пенсионеров.
-Используй инструменты для ответа на вопросы пользователя.
+У тебя есть доступ к API для поиска информации о городских услугах:
+МФЦ, поликлиники, школы, детсады, мероприятия, услуги для пенсионеров,
+парки для собак, ветклиники, дорожные работы, отключения и многое другое.
+
+ВАЖНО: Если пользователь не указал адрес или район, а он нужен для поиска,
+ОБЯЗАТЕЛЬНО спроси: "Укажите, пожалуйста, ваш адрес или район."
+
+Используй инструменты для получения актуальной информации.
 Отвечай кратко и по делу на русском языке.""",
         )
 

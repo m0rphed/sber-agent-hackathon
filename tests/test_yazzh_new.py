@@ -357,3 +357,146 @@ class TestIntegration:
 
         # API может вернуть dict или list
         assert isinstance(info, (dict, list))
+
+
+# ============================================================================
+# Тесты для красивых мест и маршрутов
+# ============================================================================
+
+
+class TestBeautifulPlaces:
+    """Тесты API красивых мест"""
+
+    @pytest.mark.asyncio
+    async def test_get_beautiful_places_default(self, client):
+        """Получение списка красивых мест без фильтров"""
+        places, total = await client.get_beautiful_places(count=5)
+
+        assert len(places) > 0
+        assert total > 0
+        # Проверяем структуру
+        place = places[0]
+        assert place.id is not None
+        assert place.title is not None or place.description is not None
+
+    @pytest.mark.asyncio
+    async def test_get_beautiful_places_by_category(self, client):
+        """Получение мест по категории"""
+        places, total = await client.get_beautiful_places(
+            categoria='Архитектура',
+            count=5,
+        )
+
+        assert len(places) > 0
+        # Проверяем, что категория соответствует
+        for place in places:
+            if place.categories:
+                assert any('архитектура' in c.lower() for c in place.categories)
+
+    @pytest.mark.asyncio
+    async def test_get_beautiful_places_by_address(self, client):
+        """Поиск красивых мест рядом с адресом"""
+        places, total = await client.get_beautiful_places_by_address(
+            'Дворцовая площадь',
+            radius_km=3,
+            count=10,
+        )
+
+        assert len(places) > 0
+        # Места должны быть в центре города
+
+    @pytest.mark.asyncio
+    async def test_get_beautiful_place_categories(self, client):
+        """Получение списка категорий"""
+        categories = await client.get_beautiful_place_categories()
+
+        assert len(categories) > 0
+        assert isinstance(categories, list)
+        # Должны быть стандартные категории
+        category_lower = [c.lower() for c in categories]
+        assert any('природа' in c or 'архитектура' in c for c in category_lower)
+
+    @pytest.mark.asyncio
+    async def test_get_beautiful_place_keywords(self, client):
+        """Получение списка ключевых слов"""
+        keywords = await client.get_beautiful_place_keywords()
+
+        assert len(keywords) > 0
+        assert isinstance(keywords, list)
+
+    @pytest.mark.asyncio
+    async def test_beautiful_place_format(self, client):
+        """Проверка форматирования места для чата"""
+        places, _ = await client.get_beautiful_places(count=1)
+
+        if places:
+            formatted = places[0].format_for_human()
+            assert len(formatted) > 0
+            assert '🏛️' in formatted or '📍' in formatted
+
+
+class TestBeautifulPlaceRoutes:
+    """Тесты API туристических маршрутов"""
+
+    @pytest.mark.asyncio
+    async def test_get_routes_default(self, client):
+        """Получение списка маршрутов без фильтров"""
+        routes, total = await client.get_beautiful_place_routes(count=5)
+
+        assert len(routes) > 0
+        assert total > 0
+        # Проверяем структуру
+        route = routes[0]
+        assert route.id is not None
+        assert route.title is not None
+
+    @pytest.mark.asyncio
+    async def test_get_routes_expanded(self, client):
+        """Получение маршрутов с полным описанием"""
+        routes, _ = await client.get_beautiful_place_routes(
+            count=3,
+            expanded=True,
+        )
+
+        assert len(routes) > 0
+        # С expanded=True должны быть waypoints
+        # (хотя не у всех маршрутов они есть)
+
+    @pytest.mark.asyncio
+    async def test_get_routes_by_address(self, client):
+        """Поиск маршрутов рядом с адресом"""
+        routes, total = await client.get_beautiful_place_routes_by_address(
+            'Невский проспект 100',
+            radius_km=10,
+            count=5,
+        )
+
+        # Маршруты могут быть не везде
+        assert isinstance(routes, list)
+        assert isinstance(total, int)
+
+    @pytest.mark.asyncio
+    async def test_get_route_themes(self, client):
+        """Получение списка тематик маршрутов"""
+        themes = await client.get_beautiful_place_route_themes()
+
+        assert len(themes) > 0
+        assert isinstance(themes, list)
+
+    @pytest.mark.asyncio
+    async def test_get_route_types(self, client):
+        """Получение списка типов маршрутов"""
+        types = await client.get_beautiful_place_route_types()
+
+        assert len(types) > 0
+        assert isinstance(types, list)
+
+    @pytest.mark.asyncio
+    async def test_route_format(self, client):
+        """Проверка форматирования маршрута для чата"""
+        routes, _ = await client.get_beautiful_place_routes(count=1)
+
+        if routes:
+            formatted = routes[0].format_for_human()
+            assert len(formatted) > 0
+            assert '🚶' in formatted
