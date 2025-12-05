@@ -225,15 +225,3 @@ $RECYCLE.BIN/
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 
 docs/
-data/test_data/
-
-# Streamlit secrets (содержит настройки аутентификации)
-.streamlit/secrets.toml
-data/parsed_docs/
-data/chroma_db/
-
-.langgraph_api/
-
-app/knowledge_base_md/
-app/rag/life_situations_md/
-data/index_metadata.json
