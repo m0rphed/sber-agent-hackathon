@@ -1,0 +1,41 @@
+{
+  "dependencies": ["."],
+  
+  "graphs": {
+    "supervisor": "./app/graphs.py:supervisor",
+    "hybrid": "./app/graphs.py:hybrid",
+    "rag": "./app/graphs.py:rag"
+  },
+  
+  "env": ".env",
+  
+  "python_version": "3.12",
+  
+  "http": {
+    "cors": {
+      "allow_origins": ["*"],
+      "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "allow_headers": ["*"],
+      "allow_credentials": true
+    },
+    "configurable_headers": {
+      "includes": ["x-user-id", "x-session-id"],
+      "excludes": ["authorization", "x-api-key"]
+    }
+  },
+  
+  "store": {
+    "ttl": {
+      "default_ttl": 1440,
+      "sweep_interval_minutes": 60,
+      "refresh_on_read": true
+    }
+  },
+  
+  "checkpointer": {
+    "ttl": {
+      "default_ttl": 10080,
+      "sweep_interval_minutes": 360
+    }
+  }
+}

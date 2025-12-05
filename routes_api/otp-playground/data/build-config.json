@@ -1,0 +1,8 @@
+{
+    "osm":[{
+        "source":"spb.osm.pbf"
+    }],
+    "gtfs":[{
+        "source":"spb-gtfs-fix.zip"
+    }]
+}

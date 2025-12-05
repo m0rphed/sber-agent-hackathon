@@ -1,0 +1,30 @@
+{
+  "source": {
+    "title": "Рождение ребёнка",
+    "url": "https://gu.spb.ru/mfc/life_situations/190057/"
+  },
+  "service_urls_found": 23,
+  "services_parsed": 3,
+  "services_failed": 0,
+  "total_content_chars": 23447,
+  "documents": [
+    {
+      "doc_id": "service_187841",
+      "title": "Государственная регистрация рождения",
+      "url": "https://gu.spb.ru/187841/",
+      "content_length": 4963
+    },
+    {
+      "doc_id": "service_188907",
+      "title": "Регистрационный учёт граждан РФ по месту пребывания и по месту жительства (форма 3 и форма 8)",
+      "url": "https://gu.spb.ru/188907/",
+      "content_length": 9402
+    },
+    {
+      "doc_id": "service_188861",
+      "title": "Выдача страхового свидетельства обязательного пенсионного страхования (СНИЛС)",
+      "url": "https://gu.spb.ru/188861/",
+      "content_length": 9082
+    }
+  ]
+}

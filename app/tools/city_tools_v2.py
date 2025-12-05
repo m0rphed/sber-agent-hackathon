@@ -1,0 +1,1555 @@
+"""
+LangChain Tools для работы с API "Я Здесь Живу" (YAZZH) - новая версия.
+
+Эти инструменты используют новый асинхронный клиент app.api.yazzh_new
+с улучшенной типизацией и форматированием.
+"""
+
+import asyncio
+from collections.abc import Callable
+from functools import wraps
+import json
+from typing import Annotated
+
+import httpx
+from langchain_core.tools import tool
+import nest_asyncio
+from pydantic import Field
+
+from app.api.yazzh_new import (
+    API_UNAVAILABLE_MESSAGE,
+    AddressNotFoundError,
+    ServiceUnavailableError,
+    YazzhAsyncClient,
+    format_building_search_for_chat,
+    format_mfc_for_chat,
+    format_polyclinics_for_chat,
+    format_schools_for_chat,
+)
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+# Применяем патч для работы asyncio.run() внутри уже запущенного event loop
+nest_asyncio.apply()
+
+
+# ============================================================================
+# Хелпер для запуска async функций в синхронном контексте
+# ============================================================================
+
+
+def run_async_with_error_handling(func: Callable):
+    """
+    Декоратор для запуска асинхронных функций в синхронном контексте.
+    Автоматически обрабатывает ServiceUnavailableError (502/504).
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return asyncio.run(func(*args, **kwargs))
+        except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+            logger.error('api_unavailable', func=func.__name__)
+            return API_UNAVAILABLE_MESSAGE
+
+    return wrapper
+
+
+def run_async(func: Callable):
+    """
+    Декоратор для запуска асинхронных функций в синхронном контексте.
+    Используется для LangChain tools, которые пока не поддерживают async.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return asyncio.run(func(*args, **kwargs))
+
+    return wrapper
+
+
+# ============================================================================
+# Аннотированные типы для параметров tools (улучшает JSON schema для LLM)
+# ============================================================================
+
+# Список районов СПб для валидации
+SPB_DISTRICTS = [
+    "Адмиралтейский", "Василеостровский", "Выборгский", "Калининский",
+    "Кировский", "Колпинский", "Красногвардейский", "Красносельский",
+    "Кронштадтский", "Курортный", "Московский", "Невский",
+    "Петроградский", "Петродворцовый", "Приморский", "Пушкинский",
+    "Фрунзенский", "Центральный"
+]
+
+# Аннотации для параметров - явно указывают что это РАЙОН, а не адрес
+DistrictParam = Annotated[
+    str,
+    Field(
+        description=(
+            "Название РАЙОНА Санкт-Петербурга (НЕ адрес!). "
+            "Примеры: 'Невский', 'Центральный', 'Калининский', 'Приморский'. "
+            "Это административная единица города, а не улица."
+        )
+    )
+]
+
+DistrictOptionalParam = Annotated[
+    str,
+    Field(
+        default="",
+        description=(
+            "Название РАЙОНА СПб (опционально). "
+            "Примеры: 'Невский', 'Центральный'. Пустая строка = весь город."
+        )
+    )
+]
+
+# Аннотации для адреса - явно указывают что это улица + дом
+AddressParam = Annotated[
+    str,
+    Field(
+        description=(
+            "АДРЕС в формате 'улица номер_дома'. "
+            "Примеры: 'Невский проспект 1', 'ул. Садовая 50', 'Большевиков 68'. "
+            "НЕ путать с названием района!"
+        )
+    )
+]
+
+AddressOptionalParam = Annotated[
+    str | None,
+    Field(
+        default=None,
+        description=(
+            "АДРЕС (опционально). Формат: 'улица номер_дома'. "
+            "Примеры: 'Невский проспект 1', 'пр. Просвещения 50'."
+        )
+    )
+]
+
+
+# ============================================================================
+# Инструменты для поиска адресов
+# ============================================================================
+
+
+@tool
+def search_address_tool(query: str) -> str:
+    """
+    Найти адрес в Санкт-Петербурге по текстовому запросу.
+
+    Используй этот инструмент, когда:
+    - Нужно уточнить адрес пользователя
+    - Пользователь указал неточный или неполный адрес
+    - Нужно проверить существование адреса
+
+    Args:
+        query: Текстовый запрос для поиска адреса
+               (например: "Невский 10", "Большевиков 68 к1", "Лиговский проспект")
+
+    Returns:
+        Список найденных адресов или сообщение об ошибке
+    """
+    logger.info('tool_call', tool='search_address', query=query)
+
+    async def _search():
+        async with YazzhAsyncClient() as client:
+            try:
+                buildings = await client.search_building(query, count=5)
+                return format_building_search_for_chat(buildings)
+            except AddressNotFoundError:
+                return 'Адрес не найден. Пожалуйста, уточните запрос.'
+
+    try:
+        result = asyncio.run(_search())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='search_address')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='search_address', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для МФЦ
+# ============================================================================
+
+
+@tool
+def find_nearest_mfc_v2(location: Annotated[str, 'Локация пользователя: адрес (улица + дом) ИЛИ название станции метро']) -> str:
+    """
+    Найти ближайший МФЦ (Многофункциональный центр) по локации пользователя.
+
+    Поддерживает ДВА режима поиска:
+    1. По АДРЕСУ (улица + дом) — стандартный поиск
+    2. По СТАНЦИИ МЕТРО — автоматически определяет координаты и ищет ближайшие МФЦ
+
+    НЕ используй, если указан только район — для района используй get_mfc_list_by_district_v2.
+
+    Примеры запросов:
+    - "МФЦ рядом с Невским проспектом 1" → location="Невский проспект 1"
+    - "Ближайший МФЦ от метро Пионерская" → location="метро Пионерская"
+    - "МФЦ у станции Василеостровская" → location="метро Василеостровская"
+
+    Args:
+        location: Адрес (улица + дом) ИЛИ станция метро. НЕ название района!
+
+    Returns:
+        Информация о ближайших МФЦ (название, адрес, телефоны, часы работы)
+        или сообщение об ошибке
+    """
+    logger.info('tool_call', tool='find_nearest_mfc_v2', location=location)
+
+    # Проверяем, упоминается ли метро
+    location_lower = location.lower()
+    is_metro = 'метро' in location_lower or 'станци' in location_lower or 'м.' in location_lower
+
+    async def _find_mfc_by_address():
+        async with YazzhAsyncClient() as client:
+            mfc = await client.get_nearest_mfc_by_address(location)
+            return format_mfc_for_chat(mfc)
+
+    async def _find_mfc_by_coords(lat: float, lon: float):
+        async with YazzhAsyncClient() as client:
+            mfc_list = await client.get_nearest_mfc_by_coords(lat, lon, distance_km=3)
+            if not mfc_list:
+                return 'МФЦ в радиусе 3 км от указанной локации не найдены.'
+            lines = [f'Ближайшие МФЦ ({len(mfc_list)} шт.):\n']
+            for mfc in mfc_list:
+                lines.append(mfc.format_for_human())
+                lines.append('')
+            return '\n'.join(lines)
+
+    try:
+        if is_metro:
+            # Используем Yandex Geocoder для определения координат метро
+            from app.api.yandex_geo import geocode_metro
+            
+            # Извлекаем название станции (убираем "метро", "станция" и т.п.)
+            metro_name = location_lower
+            for prefix in ['метро ', 'станция метро ', 'станция ', 'м. ', 'ст. ', 'ст.м. ']:
+                if metro_name.startswith(prefix):
+                    metro_name = metro_name[len(prefix):]
+                    break
+            metro_name = metro_name.strip()
+            
+            logger.info('geocoding_metro', metro_name=metro_name)
+            lat, lon = geocode_metro(metro_name)
+            logger.info('metro_coords', lat=lat, lon=lon)
+            
+            result = asyncio.run(_find_mfc_by_coords(lat, lon))
+        else:
+            result = asyncio.run(_find_mfc_by_address())
+            
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='find_nearest_mfc_v2')
+        return API_UNAVAILABLE_MESSAGE
+    except Exception as e:
+        logger.error('find_mfc_error', tool='find_nearest_mfc_v2', error=str(e))
+        # Fallback: пробуем по адресу
+        try:
+            result = asyncio.run(_find_mfc_by_address())
+        except Exception:
+            return f'Ошибка при поиске МФЦ: {e}'
+
+    logger.info(
+        'tool_result', tool='find_nearest_mfc_v2', result_preview=result[:100] if result else 'None'
+    )
+    return result
+
+
+@tool
+def get_mfc_list_by_district_v2(district: DistrictParam) -> str:
+    """
+    Получить список всех МФЦ в указанном РАЙОНЕ Санкт-Петербурга.
+
+    Используй этот инструмент, когда пользователь указал РАЙОН (не адрес!).
+    Район — это административная единица: Невский, Центральный, Калининский и т.д.
+
+    Примеры запросов:
+    - "МФЦ в Невском районе" → district="Невский"
+    - "Все МФЦ Центрального района" → district="Центральный"
+
+    Args:
+        district: Название РАЙОНА (НЕ адрес!). Примеры: "Невский", "Центральный"
+
+    Returns:
+        Список МФЦ с адресами и контактами
+    """
+    logger.info('tool_call', tool='get_mfc_list_by_district_v2', district=district)
+
+    async def _get_mfc_list():
+        async with YazzhAsyncClient() as client:
+            mfc_list = await client.get_mfc_by_district(district)
+
+            if not mfc_list:
+                return f"МФЦ в районе '{district}' не найдены. Проверьте название района."
+
+            lines = [f'МФЦ в {district} районе ({len(mfc_list)} шт.):\n']
+            for mfc in mfc_list:
+                lines.append(mfc.format_for_human())
+                lines.append('')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_mfc_list())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_mfc_list_by_district_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_mfc_list_by_district_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для поликлиник
+# ============================================================================
+
+
+@tool
+def get_polyclinics_by_address_v2(address: AddressParam) -> str:
+    """
+    Найти поликлиники, обслуживающие дом по указанному АДРЕСУ.
+
+    Требует КОНКРЕТНЫЙ АДРЕС (улица + дом), НЕ район!
+
+    Примеры запросов:
+    - "Моя поликлиника по адресу Невский 1" → address="Невский 1"
+    - "К какой поликлинике прикреплён дом на Садовой 50?" → address="Садовая 50"
+
+    Args:
+        address: АДРЕС пользователя (улица + дом)
+
+    Returns:
+        Список поликлиник с контактами и адресами
+    """
+    logger.info('tool_call', tool='get_polyclinics_by_address_v2', address=address)
+
+    async def _get_polyclinics():
+        async with YazzhAsyncClient() as client:
+            clinics = await client.get_polyclinics_by_address(address)
+            return format_polyclinics_for_chat(clinics)
+
+    try:
+        result = asyncio.run(_get_polyclinics())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_polyclinics_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_polyclinics_by_address_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для школ
+# ============================================================================
+
+
+@tool
+def get_linked_schools_by_address_v2(address: AddressParam) -> str:
+    """
+    Найти школы, прикреплённые к дому по указанному АДРЕСУ.
+
+    Требует КОНКРЕТНЫЙ АДРЕС (улица + дом), НЕ район!
+    Для списка школ по району используй get_schools_by_district_v2.
+
+    Примеры запросов:
+    - "Школа по прописке Невский проспект 10" → address="Невский проспект 10"
+
+    Args:
+        address: АДРЕС пользователя (улица + дом)
+
+    Returns:
+        Список прикреплённых школ с информацией о свободных местах
+    """
+    logger.info('tool_call', tool='get_linked_schools_by_address_v2', address=address)
+
+    async def _get_schools():
+        async with YazzhAsyncClient() as client:
+            schools = await client.get_linked_schools_by_address(address)
+            return format_schools_for_chat(schools)
+
+    try:
+        result = asyncio.run(_get_schools())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_linked_schools_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_linked_schools_by_address_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для управляющих компаний
+# ============================================================================
+
+
+@tool
+def get_management_company_by_address_v2(address: AddressParam) -> str:
+    """
+    Найти управляющую компанию (УК) для дома по указанному АДРЕСУ.
+
+    Требует КОНКРЕТНЫЙ АДРЕС (улица + дом), НЕ район!
+
+    Примеры:
+    - "УК для Невский проспект 1" → address="Невский проспект 1"
+
+    Args:
+        address: АДРЕС дома (улица + номер)
+
+    Returns:
+        Информация об управляющей компании (название, адрес, контакты)
+    """
+    logger.info('tool_call', tool='get_management_company_by_address_v2', address=address)
+
+    async def _get_uk():
+        async with YazzhAsyncClient() as client:
+            uk = await client.get_management_company_by_address(address)
+
+            if uk is None:
+                return 'Информация об управляющей компании не найдена для указанного адреса.'
+
+            lines = ['🏢 Управляющая компания:\n']
+            if uk.name:
+                lines.append(f'   Название: {uk.name}')
+            if uk.address:
+                lines.append(f'   Адрес: {uk.address}')
+            if uk.phone:
+                lines.append(f'   📞 Телефон: {uk.phone}')
+            if uk.email:
+                lines.append(f'   ✉️ Email: {uk.email}')
+            if uk.inn:
+                lines.append(f'   ИНН: {uk.inn}')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_uk())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_management_company_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info(
+        'tool_result', tool='get_management_company_by_address_v2', result_preview=result[:100]
+    )
+    return result
+
+
+# ============================================================================
+# Инструменты для получения информации о районах
+# ============================================================================
+
+
+@tool
+def get_districts_list() -> str:
+    """
+    Получить список всех районов Санкт-Петербурга.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие районы есть в Санкт-Петербурге?
+    - Список районов СПб
+    - В каких районах можно искать?
+
+    Returns:
+        Список районов города
+    """
+    logger.info('tool_call', tool='get_districts_list')
+
+    async def _get_districts():
+        async with YazzhAsyncClient() as client:
+            districts = await client.get_districts()
+
+            if not districts:
+                return 'Не удалось получить список районов.'
+
+            lines = [f'Районы Санкт-Петербурга ({len(districts)} шт.):\n']
+            for d in sorted(districts, key=lambda x: x.name):
+                lines.append(f'• {d.name}')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_districts())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_districts_list')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_districts_list', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_district_info_v2(district: DistrictParam) -> str:
+    """
+    Получить справочную информацию о РАЙОНЕ Санкт-Петербурга.
+
+    Включает полезные контакты и службы района: администрация района,
+    аварийные службы, отделы социальной защиты, здравоохранение и др.
+
+    ИСПОЛЬЗУЙ ЭТОТ ИНСТРУМЕНТ когда пользователь спрашивает:
+    - График работы администрации [район] района
+    - Телефон администрации Невского района
+    - Контакты администрации района
+    - Полезные телефоны [район] района
+    - Службы [район] района
+    - Социальные службы района
+
+    Args:
+        district: Название РАЙОНА (например: "Невский", "Центральный"). НЕ адрес!
+
+    Returns:
+        Справочная информация о районе (контакты служб, администрация)
+    """
+    logger.info('tool_call', tool='get_district_info_v2', district=district)
+
+    async def _get_district_info():
+        async with YazzhAsyncClient() as client:
+            info = await client.get_district_info_by_name(district)
+
+            if not info:
+                return f"Информация о районе '{district}' не найдена."
+
+            # info может быть списком категорий
+            if isinstance(info, list):
+                lines = [f'📋 Справочная информация по {district} району:\n']
+                for category in info[:7]:  # Показываем больше категорий
+                    cat_name = category.get('category', '')
+                    if cat_name:
+                        lines.append(f'\n📌 {cat_name}:')
+                        data = category.get('data', [])
+                        for item in data[:5]:  # Больше записей
+                            name = item.get('name', '')
+                            phone = item.get('phone', '')
+                            address = item.get('address', '')
+                            working_hours = item.get('working_hours', '')
+                            if name:
+                                line = f'   • {name}'
+                                if phone:
+                                    line += f'\n     📞 {phone}'
+                                if address:
+                                    line += f'\n     📍 {address}'
+                                if working_hours:
+                                    line += f'\n     🕐 {working_hours}'
+                                lines.append(line)
+                return '\n'.join(lines)
+
+            return json.dumps(info, ensure_ascii=False, indent=2)
+
+    try:
+        result = asyncio.run(_get_district_info())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_district_info_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_district_info_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_district_info_by_address_v2(address: AddressParam) -> str:
+    """
+    Получить справочную информацию о районе по адресу.
+
+    Включает полезные контакты и службы района: аварийные службы,
+    отделы социальной защиты, здравоохранение и др.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Полезные телефоны для моего района
+    - Службы по адресу [адрес]
+    - Контакты администрации района
+    - Социальные службы моего района
+
+    Args:
+        address: Адрес в Санкт-Петербурге (улица и дом). Это НЕ район!
+
+    Returns:
+        Справочная информация о районе (контакты служб)
+    """
+    logger.info('tool_call', tool='get_district_info_by_address_v2', address=address)
+
+    async def _get_district_info():
+        async with YazzhAsyncClient() as client:
+            try:
+                building = await client.search_building_first(address)
+            except AddressNotFoundError:
+                return f"Адрес '{address}' не найден."
+
+            info = await client.get_district_info_by_building(building.building_id)
+
+            if not info:
+                return 'Не удалось получить информацию о районе.'
+
+            # info может быть списком категорий
+            if isinstance(info, list):
+                lines = ['📋 Справочная информация по району:\n']
+                for category in info[:5]:  # Ограничим вывод
+                    cat_name = category.get('category', '')
+                    if cat_name:
+                        lines.append(f'\n📌 {cat_name}:')
+                        data = category.get('data', [])
+                        for item in data[:3]:  # Первые 3 записи
+                            name = item.get('name', '')
+                            phone = item.get('phone', '')
+                            if name:
+                                line = f'   • {name}'
+                                if phone:
+                                    line += f' — {phone}'
+                                lines.append(line)
+                return '\n'.join(lines)
+
+            return json.dumps(info, ensure_ascii=False, indent=2)
+
+    try:
+        result = asyncio.run(_get_district_info())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_district_info_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_district_info_by_address_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для детских садов (ДОУ)
+# ============================================================================
+
+
+@tool
+def get_kindergartens_v2(district: DistrictParam, age_years: int = 3, age_months: int = 0) -> str:
+    """
+    Найти детские сады в районе для ребёнка определённого возраста.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие детские сады есть в [район]?
+    - Куда отдать ребёнка 3 лет в детский сад?
+    - Детсады со свободными местами в Невском районе
+    - Государственные детские сады для ребёнка 2 лет
+
+    Args:
+        district: Название района Санкт-Петербурга (например: "Невский", "Центральный")
+        age_years: Возраст ребёнка в годах (0-9)
+        age_months: Возраст ребёнка в месяцах (0-11)
+
+    Returns:
+        Список детских садов со свободными местами
+    """
+    logger.info('tool_call', tool='get_kindergartens_v2', district=district, age_years=age_years)
+
+    async def _get_kindergartens():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_kindergartens_for_chat
+
+            kindergartens = await client.get_kindergartens(
+                district=district,
+                age_year=age_years,
+                age_month=age_months,
+                count=10,
+            )
+            return format_kindergartens_for_chat(kindergartens)
+
+    try:
+        result = asyncio.run(_get_kindergartens())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_kindergartens_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_kindergartens_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для афиши (мероприятий)
+# ============================================================================
+
+
+@tool
+def get_city_events_v2(
+    days_ahead: Annotated[int, Field(description="На сколько дней вперёд искать мероприятия. По умолчанию 7 (неделя). Максимум 30.")] = 7,
+    category: Annotated[str, Field(description="Категория мероприятия: 'Концерт', 'Выставка', 'Спектакль', 'Экскурсия', 'Фестиваль', 'Кино'. Пустая строка = все категории.")] = '',
+    free_only: Annotated[bool, Field(description="True = только бесплатные мероприятия. False = все.")] = False,
+    for_kids: Annotated[bool, Field(description="True = только детские/семейные мероприятия. False = все.")] = False,
+) -> str:
+    """
+    АФИША города: мероприятия, концерты, выставки, спектакли в Санкт-Петербурге.
+
+    ИСПОЛЬЗУЙ ЭТОТ ИНСТРУМЕНТ когда пользователь спрашивает:
+    - "Покажи афишу" / "Афиша на ближайшие дни"
+    - "Что интересного в городе на выходных?"
+    - "Какие концерты/выставки/спектакли будут?"
+    - "Бесплатные мероприятия в СПб"
+    - "Куда сходить с ребёнком?"
+    - "События в Петербурге на этой неделе"
+    - "Что посетить в выходные?"
+
+    Returns:
+        Список мероприятий с датами, местами и ценами
+    """
+    logger.info(
+        'tool_call',
+        tool='get_city_events_v2',
+        days_ahead=days_ahead,
+        category=category,
+        free_only=free_only,
+    )
+
+    async def _get_events():
+        import pendulum
+
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_events_for_chat
+
+            now = pendulum.now('Europe/Moscow')
+            start_date = now.format('YYYY-MM-DDTHH:mm:ss')
+            end_date = now.add(days=days_ahead).format('YYYY-MM-DDTHH:mm:ss')
+
+            events = await client.get_events(
+                start_date=start_date,
+                end_date=end_date,
+                category=category if category else None,
+                free=True if free_only else None,
+                kids=True if for_kids else None,
+                count=10,
+            )
+            return format_events_for_chat(events)
+
+    try:
+        result = asyncio.run(_get_events())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_city_events_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_city_events_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_event_categories_v2() -> str:
+    """
+    Получить список категорий мероприятий в афише города.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие категории мероприятий есть?
+    - Что можно посмотреть в городе?
+    - Типы событий в афише
+
+    Returns:
+        Список доступных категорий мероприятий с количеством
+    """
+    logger.info('tool_call', tool='get_event_categories_v2')
+
+    async def _get_categories():
+        async with YazzhAsyncClient() as client:
+            categories = await client.get_event_categories()
+
+            if not categories:
+                return 'Не удалось получить список категорий мероприятий.'
+
+            # categories теперь dict {категория: количество}
+            lines = ['📋 Категории мероприятий в афише:\n']
+            # Сортируем по количеству (убывание)
+            sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
+            for cat, count in sorted_cats:
+                lines.append(f'• {cat} ({count} мероприятий)')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_categories())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_event_categories_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_event_categories_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для отключений коммунальных услуг
+# ============================================================================
+
+
+@tool
+def get_disconnections_by_address_v2(address: AddressParam) -> str:
+    """
+    Проверить наличие отключений воды или электричества по адресу.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Когда отключат воду/горячую воду в моём доме?
+    - Будут ли отключения электричества по адресу [адрес]?
+    - Есть ли плановые отключения по моему адресу?
+    - Почему нет воды/света?
+
+    Args:
+        address: Адрес дома в Санкт-Петербурге (например: "Невский проспект 100")
+
+    Returns:
+        Информация об отключениях или сообщение что отключений нет
+    """
+    logger.info('tool_call', tool='get_disconnections_by_address_v2', address=address)
+
+    async def _get_disconnections():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_disconnections_for_chat
+
+            disconnections = await client.get_disconnections_by_address(address)
+            return format_disconnections_for_chat(disconnections)
+
+    try:
+        result = asyncio.run(_get_disconnections())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_disconnections_by_address_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_disconnections_by_address_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для спортивных мероприятий
+# ============================================================================
+
+
+@tool
+def get_sport_events_v2(
+    district: DistrictParam = '',
+    days_ahead: Annotated[int, Field(description="На сколько дней вперёд искать. По умолчанию 14. Максимум 30.")] = 14,
+    category: Annotated[str, Field(description="Вид спорта: 'Футбол', 'Баскетбол', 'Волейбол', 'Скандинавская ходьба', 'Йога'. Пустая строка = все виды.")] = '',
+    for_disabled: Annotated[bool, Field(description="True = только мероприятия для людей с ОВЗ.")] = False,
+    family_hour: Annotated[bool, Field(description="True = только мероприятия 'Семейный час'.")] = False,
+) -> str:
+    """
+    Найти спортивные мероприятия в Санкт-Петербурге.
+
+    ИСПОЛЬЗУЙ ЭТОТ ИНСТРУМЕНТ когда пользователь спрашивает:
+    - Какие спортивные мероприятия будут?
+    - Соревнования по футболу/баскетболу/волейболу
+    - Спортивные события для людей с ОВЗ
+    - Семейные спортивные мероприятия
+    - Где позаниматься спортом?
+
+    Returns:
+        Список спортивных мероприятий с датами и адресами
+    """
+    logger.info(
+        'tool_call',
+        tool='get_sport_events_v2',
+        district=district,
+        days_ahead=days_ahead,
+        category=category,
+    )
+
+    async def _get_sport_events():
+        import pendulum
+
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_sport_events_for_chat
+
+            now = pendulum.now('Europe/Moscow')
+            start_date = now.format('YYYY-MM-DD')
+            end_date = now.add(days=days_ahead).format('YYYY-MM-DD')
+
+            events = await client.get_sport_events(
+                district=district if district else None,
+                categoria=category if category else None,
+                start_date=start_date,
+                end_date=end_date,
+                ovz=True if for_disabled else None,
+                family_hour=True if family_hour else None,
+                count=10,
+            )
+            return format_sport_events_for_chat(events)
+
+    try:
+        result = asyncio.run(_get_sport_events())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sport_events_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_sport_events_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_sport_categories_by_district_v2(district: DistrictParam) -> str:
+    """
+    Получить список видов спорта, доступных в районе.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие виды спорта есть в [район]?
+    - Каким спортом можно заняться в Невском районе?
+    - Что из спорта проводится в моём районе?
+
+    Args:
+        district: Название района (например: "Невский", "Центральный")
+
+    Returns:
+        Список видов спорта, по которым проводятся мероприятия в районе
+    """
+    logger.info('tool_call', tool='get_sport_categories_by_district_v2', district=district)
+
+    async def _get_categories():
+        async with YazzhAsyncClient() as client:
+            categories = await client.get_sport_event_categories(district)
+
+            if not categories:
+                return f"Информация о видах спорта в районе '{district}' не найдена."
+
+            lines = [f'🏅 Виды спорта в {district} районе:\n']
+            for cat in sorted(categories):
+                lines.append(f'• {cat}')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_categories())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sport_categories_by_district_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info(
+        'tool_result', tool='get_sport_categories_by_district_v2', result_preview=result[:100]
+    )
+    return result
+
+
+# ============================================================================
+# Инструменты для услуг пенсионерам (Долголетие)
+# ============================================================================
+
+
+@tool
+def get_pensioner_service_categories_v2() -> str:
+    """
+    Получить список категорий услуг для пенсионеров (программа "Долголетие").
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие занятия есть для пенсионеров?
+    - Что входит в программу Долголетие?
+    - Виды активностей для пожилых людей
+
+    Returns:
+        Список категорий услуг (Вокал, Здоровье, Спорт и т.д.)
+    """
+    logger.info('tool_call', tool='get_pensioner_service_categories_v2')
+
+    async def _get_categories():
+        async with YazzhAsyncClient() as client:
+            categories = await client.get_pensioner_service_categories()
+
+            if not categories:
+                return 'Не удалось получить список категорий услуг для пенсионеров.'
+
+            lines = ['🎭 Категории услуг для пенсионеров (программа "Долголетие"):\n']
+            for cat in sorted(categories):
+                lines.append(f'• {cat}')
+            return '\n'.join(lines)
+
+    try:
+        result = asyncio.run(_get_categories())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_pensioner_service_categories_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info(
+        'tool_result', tool='get_pensioner_service_categories_v2', result_preview=result[:100]
+    )
+    return result
+
+
+@tool
+def get_pensioner_services_v2(
+    district: DistrictParam,
+    category: str = '',
+) -> str:
+    """
+    Найти услуги для пенсионеров в районе по программе "Долголетие".
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие занятия для пенсионеров есть в [район]?
+    - Где заниматься йогой/танцами/рукоделием для пожилых?
+    - Услуги по программе Долголетие в моём районе
+    - Активности для людей старшего возраста
+
+    Args:
+        district: Район города (например: "Невский", "Центральный")
+        category: Категория услуги (например: "Здоровье", "Спорт", "Танцы").
+                  Пустая строка = все категории.
+
+    Returns:
+        Список услуг с адресами и описаниями
+    """
+    logger.info(
+        'tool_call',
+        tool='get_pensioner_services_v2',
+        district=district,
+        category=category,
+    )
+
+    async def _get_services():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_pensioner_services_for_chat
+
+            categories = [category] if category else None
+            services = await client.get_pensioner_services(
+                district=district,
+                categories=categories,
+                count=10,
+            )
+            return format_pensioner_services_for_chat(services)
+
+    try:
+        result = asyncio.run(_get_services())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_pensioner_services_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_pensioner_services_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для памятных дат
+# ============================================================================
+
+
+@tool
+def get_memorable_dates_today_v2() -> str:
+    """
+    Получить памятные даты в истории Санкт-Петербурга на сегодня.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Какие события произошли сегодня в истории Петербурга?
+    - Памятные даты на сегодня
+    - Что интересного случилось в этот день в истории города?
+    - Исторические события сегодняшнего дня
+
+    Returns:
+        Список памятных дат с описаниями
+    """
+    logger.info('tool_call', tool='get_memorable_dates_today_v2')
+
+    async def _get_dates():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_memorable_dates_for_chat
+
+            dates = await client.get_memorable_dates_today()
+            return format_memorable_dates_for_chat(dates)
+
+    try:
+        result = asyncio.run(_get_dates())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_memorable_dates_today_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_memorable_dates_today_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Инструменты для спортплощадок (статистика)
+# ============================================================================
+
+
+@tool
+def get_sportgrounds_count_v2(district: DistrictParam = '') -> str:
+    """
+    Получить количество спортплощадок в городе или конкретном районе.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Сколько спортплощадок в Санкт-Петербурге?
+    - Сколько спортплощадок в [район]?
+    - Статистика спортплощадок по районам
+    - В каком районе больше всего спортплощадок?
+
+    Args:
+        district: Район города (например: "Невский"). Пустая строка = статистика по всем районам.
+
+    Returns:
+        Количество спортплощадок
+    """
+    logger.info('tool_call', tool='get_sportgrounds_count_v2', district=district)
+
+    async def _get_count():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_sportgrounds_count_for_chat
+
+            if district:
+                # Конкретный район
+                counts = await client.get_sportgrounds_count_by_district(district)
+                return format_sportgrounds_count_for_chat(counts)
+            else:
+                # Статистика по всем районам
+                counts = await client.get_sportgrounds_count_by_district()
+                return format_sportgrounds_count_for_chat(counts)
+
+    try:
+        result = asyncio.run(_get_count())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sportgrounds_count_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_sportgrounds_count_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_sportgrounds_v2(
+    district: DistrictParam = '',
+    sport_types: str = '',
+    count: int = 10,
+) -> str:
+    """
+    Найти спортивные площадки с фильтрами по району и типу спорта.
+
+    Используй этот инструмент, когда пользователь спрашивает:
+    - Где находятся спортплощадки в [район]?
+    - Покажи футбольные площадки в Невском районе
+    - Найди площадку для баскетбола рядом с домом
+    - Какие спортплощадки есть в [район]?
+    - Хочу поиграть в футбол, где можно?
+
+    Args:
+        district: Район города (например: "Невский"). Пустая строка = весь город.
+        sport_types: Типы спорта через запятую (например: "Футбол, Баскетбол").
+                     Пустая строка = все типы.
+        count: Количество площадок (по умолчанию 10, максимум 50).
+
+    Returns:
+        Список спортплощадок с адресами и типами спорта
+    """
+    logger.info(
+        'tool_call',
+        tool='get_sportgrounds_v2',
+        district=district,
+        sport_types=sport_types,
+        count=count,
+    )
+
+    # Ограничим количество
+    count = min(max(1, count), 50)
+
+    async def _get_sportgrounds():
+        async with YazzhAsyncClient() as client:
+            from app.api.yazzh_new import format_sportgrounds_for_chat
+
+            sportgrounds, total = await client.get_sportgrounds(
+                district=district or None,
+                sport_types=sport_types or None,
+                count=count,
+            )
+            return format_sportgrounds_for_chat(sportgrounds, total)
+
+    try:
+        result = asyncio.run(_get_sportgrounds())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_sportgrounds_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_sportgrounds_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Tier 2: Дорожные работы, школы, ветклиники, парки для питомцев
+# ============================================================================
+
+
+@tool
+def get_road_works_v2(
+    district: Annotated[str | None, Field(description="Район СПб. Примеры: 'Невский', 'Центральный'. Это НЕ адрес!")] = None,
+    address: Annotated[str | None, Field(description="Конкретный адрес: улица + дом. Примеры: 'Невский проспект 10'. Это НЕ район!")] = None,
+    count: int = 10,
+) -> str:
+    """Получить информацию о дорожных работах ГАТИ в Санкт-Петербурге.
+
+    Возвращает список конкретных дорожных работ: где, какие, когда.
+    Можно искать по району или рядом с адресом.
+
+    Args:
+        district: Название района (опционально). Примеры: "Невский", "Центральный"
+        address: Адрес для поиска рядом (опционально). Примеры: "Невский проспект 10"
+        count: Количество результатов (по умолчанию 10)
+
+    Returns:
+        Список дорожных работ с адресами, типами работ и сроками
+    """
+    from app.api.yazzh_new import (
+        format_road_works_list_for_chat,
+    )
+
+    logger.info(
+        'tool_called', tool='get_road_works_v2', district=district, address=address, count=count
+    )
+
+    async def _get_road_works() -> str:
+        async with YazzhAsyncClient() as client:
+            if address:
+                # Поиск рядом с адресом
+                works, total = await client.get_road_works_by_address(
+                    address=address,
+                    radius=3,
+                    count=count,
+                )
+                return format_road_works_list_for_chat(works, total)
+            elif district:
+                # Поиск по району
+                works, total = await client.get_road_works(
+                    district=district,
+                    count=count,
+                )
+                return format_road_works_list_for_chat(works, total, district)
+            else:
+                # Общая статистика по районам
+                stats = await client.get_road_works_stats()
+                from app.api.yazzh_new import format_road_works_for_chat
+
+                return format_road_works_for_chat(stats)
+
+    try:
+        result = asyncio.run(_get_road_works())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_road_works_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_road_works_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_schools_by_district_v2(
+    district: DistrictParam,
+    kind: str | None = None,
+) -> str:
+    """Получить список школ в указанном районе Санкт-Петербурга.
+
+    Args:
+        district: Название района. Примеры: "Невский", "Центральный", "Выборгский"
+        kind: Тип учреждения (опционально). Значения:
+            - "Общеобразовательное" - обычные школы
+            - "С углубленным изучением" - специализированные
+            - None - все типы
+
+    Returns:
+        Список школ с профилями обучения и контактами
+    """
+    from app.api.yazzh_new import (
+        format_schools_by_district_for_chat,
+    )
+
+    logger.info('tool_called', tool='get_schools_by_district_v2', district=district, kind=kind)
+
+    async def _get_schools() -> str:
+        async with YazzhAsyncClient() as client:
+            schools = await client.get_schools_by_district(
+                district=district,
+                kind=kind or None,
+            )
+            return format_schools_by_district_for_chat(schools, district)
+
+    try:
+        result = asyncio.run(_get_schools())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_schools_by_district_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_schools_by_district_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_vet_clinics_v2(
+    address: AddressParam,
+    radius: int = 5000,
+) -> str:
+    """Найти ветеринарные клиники рядом с указанным адресом.
+
+    Поиск ветклиник в радиусе от заданного адреса для помощи питомцам.
+
+    Args:
+        address: Адрес для поиска. Примеры: "Невский проспект 1", "пр. Просвещения 50"
+        radius: Радиус поиска в метрах (по умолчанию 5000)
+
+    Returns:
+        Список ветеринарных клиник с адресами, телефонами и услугами
+    """
+    from app.api.yazzh_new import (
+        format_vet_clinics_for_chat,
+    )
+
+    logger.info('tool_called', tool='get_vet_clinics_v2', address=address, radius=radius)
+
+    # Конвертируем метры в км для API
+    radius_km = max(1, radius // 1000)
+
+    async def _get_vet_clinics() -> str:
+        async with YazzhAsyncClient() as client:
+            clinics, _ = await client.get_vet_clinics_by_address(
+                address=address,
+                radius=radius_km,
+            )
+            return format_vet_clinics_for_chat(clinics)
+
+    try:
+        result = asyncio.run(_get_vet_clinics())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_vet_clinics_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_vet_clinics_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_pet_parks_v2(
+    address: AddressParam,
+    radius: int = 5000,
+    place_type: str | None = None,
+) -> str:
+    """Найти парки и площадки для выгула собак рядом с указанным адресом.
+
+    Поиск мест для прогулок с питомцами: парки и специальные площадки для собак.
+
+    Args:
+        address: Адрес для поиска. Примеры: "Невский проспект 1", "Комендантский проспект 10"
+        radius: Радиус поиска в метрах (по умолчанию 5000)
+        place_type: Тип места (опционально):
+            - "Парк" - парки для выгула
+            - "Площадка" - специальные площадки для собак
+            - None - все типы
+
+    Returns:
+        Список парков и площадок с адресами и описанием
+    """
+    from app.api.yazzh_new import (
+        format_pet_parks_for_chat,
+    )
+
+    logger.info(
+        'tool_called',
+        tool='get_pet_parks_v2',
+        address=address,
+        radius=radius,
+        place_type=place_type,
+    )
+
+    # Конвертируем метры в км для API
+    radius_km = max(1, radius // 1000)
+
+    async def _get_pet_parks() -> str:
+        async with YazzhAsyncClient() as client:
+            parks, _ = await client.get_pet_parks_by_address(
+                address=address,
+                radius=radius_km,
+            )
+            return format_pet_parks_for_chat(parks)
+
+    try:
+        result = asyncio.run(_get_pet_parks())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_pet_parks_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_pet_parks_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Tier 2: Красивые места и туристические маршруты
+# ============================================================================
+
+
+@tool
+def get_beautiful_places_v2(
+    address: Annotated[str | None, Field(description="Конкретный адрес: улица + дом. Примеры: 'Невский проспект 1'. Это НЕ район!")] = None,
+    category: str | None = None,
+    district: Annotated[str | None, Field(description="Район СПб. Примеры: 'Центральный', 'Петроградский'. Это НЕ адрес!")] = None,
+    keyword: str | None = None,
+    radius: int = 10000,
+    count: int = 10,
+) -> str:
+    """Найти красивые и интересные места Санкт-Петербурга.
+
+    Поиск достопримечательностей, интересных мест, объектов культуры и природы.
+    Можно искать рядом с адресом или по категориям/районам.
+
+    Args:
+        address: Адрес для поиска рядом (опционально). Примеры: "Невский проспект 1", "Дворцовая площадь"
+        category: Категория места (опционально):
+            - "Природа" - парки, сады, озёра, ландшафты
+            - "Архитектура" - исторические здания, дворцы, соборы
+            - "Развлечения" - музеи, театры, развлекательные объекты
+            - "Гастрономия" - рестораны, кафе, кулинарные места
+        district: Район Санкт-Петербурга (опционально). Пример: "Центральный район"
+        keyword: Ключевое слово для поиска (опционально): "озеро", "сад", "дворец", "скала"
+        radius: Радиус поиска в метрах от адреса (по умолчанию 10000)
+        count: Количество результатов (по умолчанию 10, максимум 50)
+
+    Returns:
+        Список красивых мест с описаниями, адресами и категориями
+    """
+    from app.api.yazzh_new import (
+        format_beautiful_places_for_chat,
+    )
+
+    logger.info(
+        'tool_called',
+        tool='get_beautiful_places_v2',
+        address=address,
+        category=category,
+        district=district,
+    )
+
+    # Ограничиваем количество
+    count = min(count, 50)
+    # Конвертируем метры в км
+    radius_km = max(1, radius // 1000)
+
+    async def _get_places() -> str:
+        async with YazzhAsyncClient() as client:
+            if address:
+                # Поиск по адресу
+                places, total = await client.get_beautiful_places_by_address(
+                    address=address,
+                    categoria=category,
+                    keywords=keyword,
+                    radius_km=radius_km,
+                    count=count,
+                )
+            else:
+                # Поиск по фильтрам
+                places, total = await client.get_beautiful_places(
+                    categoria=category,
+                    district=district,
+                    keywords=keyword,
+                    count=count,
+                )
+            return format_beautiful_places_for_chat(places, total)
+
+    try:
+        result = asyncio.run(_get_places())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_beautiful_places_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_beautiful_places_v2', result_preview=result[:100])
+    return result
+
+
+@tool
+def get_beautiful_place_routes_v2(
+    address: str | None = None,
+    theme: str | None = None,
+    route_type: str | None = None,
+    accessible: bool | None = None,
+    with_audio: bool | None = None,
+    max_length_km: int | None = None,
+    max_duration_hours: int | None = None,
+    radius: int = 20000,
+    count: int = 10,
+) -> str:
+    """Найти туристические маршруты по Санкт-Петербургу.
+
+    Поиск пеших, велосипедных и других маршрутов для прогулок и экскурсий.
+
+    Args:
+        address: Адрес для поиска маршрутов рядом (опционально). Пример: "Невский проспект 1"
+        theme: Тематика маршрута (опционально): архитектура, история, природа, искусство
+        route_type: Тип маршрута (опционально): пешеходный, велосипедный, автомобильный
+        accessible: Только маршруты, доступные для людей с ОВЗ (опционально)
+        with_audio: Только маршруты с аудиогидом (опционально)
+        max_length_km: Максимальная длина маршрута в километрах (опционально)
+        max_duration_hours: Максимальная продолжительность в часах (опционально)
+        radius: Радиус поиска в метрах от адреса (по умолчанию 20000)
+        count: Количество результатов (по умолчанию 10, максимум 50)
+
+    Returns:
+        Список маршрутов с описанием, длиной, продолжительностью и тематикой
+    """
+    from app.api.yazzh_new import (
+        format_beautiful_routes_for_chat,
+    )
+
+    logger.info(
+        'tool_called',
+        tool='get_beautiful_place_routes_v2',
+        address=address,
+        theme=theme,
+        route_type=route_type,
+    )
+
+    # Ограничиваем количество
+    count = min(count, 50)
+    # Конвертируем метры в км
+    radius_km = max(1, radius // 1000)
+    # Конвертируем часы в минуты
+    max_duration_min = max_duration_hours * 60 if max_duration_hours else None
+
+    async def _get_routes() -> str:
+        async with YazzhAsyncClient() as client:
+            if address:
+                # Поиск по адресу
+                routes, total = await client.get_beautiful_place_routes_by_address(
+                    address=address,
+                    theme=theme,
+                    route_type=route_type,
+                    radius_km=radius_km,
+                    count=count,
+                )
+            else:
+                # Поиск по фильтрам
+                routes, total = await client.get_beautiful_place_routes(
+                    theme=theme,
+                    route_type=route_type,
+                    access_for_disabled=accessible,
+                    audio=with_audio,
+                    length_km_to=max_length_km,
+                    time_min_to=max_duration_min,
+                    count=count,
+                )
+            return format_beautiful_routes_for_chat(routes, total)
+
+    try:
+        result = asyncio.run(_get_routes())
+    except (ServiceUnavailableError, httpx.TimeoutException, httpx.ConnectError):
+        logger.error('api_unavailable', tool='get_beautiful_place_routes_v2')
+        return API_UNAVAILABLE_MESSAGE
+
+    logger.info('tool_result', tool='get_beautiful_place_routes_v2', result_preview=result[:100])
+    return result
+
+
+# ============================================================================
+# Экспорт инструментов
+# ============================================================================
+
+# Список всех новых инструментов v2
+city_tools_v2 = [
+    search_address_tool,
+    find_nearest_mfc_v2,
+    get_mfc_list_by_district_v2,
+    get_polyclinics_by_address_v2,
+    get_linked_schools_by_address_v2,
+    get_management_company_by_address_v2,
+    get_districts_list,
+    get_district_info_v2,  # Новый: информация о районе по названию
+    get_district_info_by_address_v2,
+    # Новые инструменты
+    get_kindergartens_v2,
+    get_city_events_v2,
+    get_event_categories_v2,
+    # Отключения и спорт
+    get_disconnections_by_address_v2,
+    get_sport_events_v2,
+    get_sport_categories_by_district_v2,
+    # Tier 1: Пенсионеры, памятные даты, спортплощадки
+    get_pensioner_service_categories_v2,
+    get_pensioner_services_v2,
+    get_memorable_dates_today_v2,
+    get_sportgrounds_count_v2,
+    get_sportgrounds_v2,
+    # Tier 2: Дорожные работы, школы, ветклиники, парки для питомцев
+    get_road_works_v2,
+    get_schools_by_district_v2,
+    get_vet_clinics_v2,
+    get_pet_parks_v2,
+    # Tier 2: Красивые места и маршруты
+    get_beautiful_places_v2,
+    get_beautiful_place_routes_v2,
+]
