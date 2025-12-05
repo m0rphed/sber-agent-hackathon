@@ -1207,6 +1207,65 @@ class YazzhAsyncClient:
             return [MFCInfo.model_validate(m) for m in mfc_list]
         return []
 
+    async def get_nearest_mfc_by_coords(
+        self,
+        latitude: float,
+        longitude: float,
+        distance_km: int = 2,
+    ) -> list[MFCInfo]:
+        """
+        Найти ближайшие МФЦ по координатам.
+
+        Используй когда известны координаты (например, станции метро).
+
+        Args:
+            latitude: Широта (например 59.935)
+            longitude: Долгота (например 30.327)
+            distance_km: Радиус поиска в км (по умолчанию 2)
+
+        Returns:
+            Список ближайших МФЦ
+        """
+        logger.info(
+            'api_call',
+            method='get_nearest_mfc_by_coords',
+            lat=latitude,
+            lon=longitude,
+            distance=distance_km,
+        )
+
+        # API ожидает формат "longitude latitude" (долгота пробел широта)
+        user_pos = f'{longitude} {latitude}'
+
+        response = await self.client.get(
+            f'{self.api_site}/mfc/nearest',
+            params={
+                'user_pos': user_pos,
+                'distance': distance_km,
+            },
+        )
+
+        self._check_gateway_errors(response, 'get_nearest_mfc_by_coords')
+
+        if response.status_code != 200:
+            logger.warning(
+                'api_error',
+                method='get_nearest_mfc_by_coords',
+                status=response.status_code,
+            )
+            return []
+
+        data = response.json()
+
+        # Парсим ответ (может быть list, dict с data, или просто dict)
+        mfc_list = data.get('data', data) if isinstance(data, dict) else data
+
+        if isinstance(mfc_list, list):
+            return [MFCInfo.model_validate(m) for m in mfc_list]
+        elif mfc_list:
+            return [MFCInfo.model_validate(mfc_list)]
+        return []
+
     # -------------------------------------------------------------------------
     # Поликлиники
     # -------------------------------------------------------------------------
@@ -1352,6 +1411,33 @@ class YazzhAsyncClient:
         )
 
         self._check_gateway_errors(response, 'get_district_info')
+
+        if response.status_code != 200:
+            return {}
+
+        return response.json()
+
+    async def get_district_info_by_name(self, district_name: str) -> dict[str, Any]:
+        """
+        Получить районную справку по названию района.
+
+        Включает информацию о районе: администрация, полезные телефоны,
+        аварийные службы, отделы социальной защиты и др.
+
+        Args:
+            district_name: Название района (например: "Невский", "Центральный")
+
+        Returns:
+            Словарь с информацией о районе
+        """
+        logger.info('api_call', method='get_district_info_by_name', district_name=district_name)
+
+        response = await self.client.get(
+            f'{self.api_site}/districts-info/district/',
+            params={'district_name': district_name},
+        )
+
+        self._check_gateway_errors(response, 'get_district_info_by_name')
 
         if response.status_code != 200:
             return {}
@@ -3107,6 +3193,33 @@ async def find_nearest_mfc_async(address: str) -> str:
         if mfc:
             return json.dumps(mfc.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
         return 'К сожалению, не удалось найти МФЦ по указанному адресу.'
+
+
+async def find_nearest_mfc_by_coords_async(
+    latitude: float,
+    longitude: float,
+    distance_km: int = 3,
+) -> str:
+    """
+    Найти ближайшие МФЦ по координатам (например, координаты станции метро).
+
+    Args:
+        latitude: Широта (например 59.9343)
+        longitude: Долгота (например 30.3351)
+        distance_km: Радиус поиска в км (по умолчанию 3)
+
+    Returns:
+        JSON с информацией о ближайших МФЦ или сообщение об ошибке
+    """
+    async with YazzhAsyncClient() as client:
+        mfc_list = await client.get_nearest_mfc_by_coords(latitude, longitude, distance_km)
+        if mfc_list:
+            return json.dumps(
+                [m.model_dump(exclude_none=True) for m in mfc_list],
+                ensure_ascii=False,
+                indent=2,
+            )
+        return f'Не найдено МФЦ в радиусе {distance_km} км от указанных координат.'
 
 
 async def get_polyclinics_async(address: str) -> str:

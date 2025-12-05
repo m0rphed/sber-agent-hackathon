@@ -66,6 +66,7 @@ def get_tool_by_name(tool_name: str) -> Any | None:
 _CLARIFICATION_MESSAGES: dict[str, str] = {
     # Требуют адрес
     "search_mfc": "Для поиска ближайшего МФЦ укажите ваш адрес. Например: «Невский проспект 1»",
+    "mfc_search": "Для поиска ближайшего МФЦ укажите ваш адрес. Например: «Невский проспект 1»",  # Legacy alias
     "search_polyclinic": "Укажите ваш адрес для поиска поликлиники. Например: «Садовая 50»",
     "search_school": "Укажите адрес для поиска школы по прописке. Например: «Большевиков 68»",
     "search_management_company": "Укажите адрес для поиска управляющей компании.",
@@ -77,6 +78,7 @@ _CLARIFICATION_MESSAGES: dict[str, str] = {
     # Требуют район
     "search_kindergarten": "Укажите район для поиска детских садов. Например: «Невский», «Центральный»",
     "pensioner_services": "Укажите район для поиска занятий. Например: «Калининский район»",
+    "district_info": "Укажите название района для получения информации. Например: «Невский», «Центральный»",
 }
 
 
@@ -165,9 +167,9 @@ def _invoke_tool(tool: Any, tool_name: str, params: dict[str, Any]) -> str:
     Разные tools принимают разные аргументы — этот метод
     преобразует params в нужный формат.
     """
-    # Tools которые принимают только address (строку)
+    # Tools которые принимают только address/location (строку)
+    # find_nearest_mfc_v2 принимает location (может быть адрес или метро)
     address_only_tools = {
-        "find_nearest_mfc_v2",
         "get_polyclinics_by_address_v2",
         "get_linked_schools_by_address_v2",
         "get_management_company_by_address_v2",
@@ -181,19 +183,33 @@ def _invoke_tool(tool: Any, tool_name: str, params: dict[str, Any]) -> str:
         "get_memorable_dates_today_v2",
     }
 
-    # Tools с district только
-    district_only_tools = {
+    # Tools с district только (строка)
+    district_only_str_tools = {
+        "get_district_info_v2",  # Информация о районе по названию
+    }
+
+    # Tools с district в dict
+    district_only_dict_tools = {
         "get_kindergartens_v2",
     }
 
-    if tool_name in address_only_tools:
+    # Специальная обработка для МФЦ — принимает location (адрес или метро)
+    if tool_name == "find_nearest_mfc_v2":
+        location = params.get("address", "")  # В params приходит как address
+        return tool.invoke(location)
+
+    elif tool_name in address_only_tools:
         address = params.get("address", "")
         return tool.invoke(address)
 
     elif tool_name in no_params_tools:
         return tool.invoke({})
 
-    elif tool_name in district_only_tools:
+    elif tool_name in district_only_str_tools:
+        district = params.get("district", "")
+        return tool.invoke(district)
+
+    elif tool_name in district_only_dict_tools:
         district = params.get("district", "")
         return tool.invoke({"district": district, "age_years": 3, "age_months": 0})
 

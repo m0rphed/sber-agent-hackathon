@@ -202,6 +202,7 @@ class ExtractedEntities(BaseModel):
 
 INTENT_TO_TOOL_NAME: dict[str, str] = {
     "search_mfc": "find_nearest_mfc_v2",
+    "mfc_search": "find_nearest_mfc_v2",  # Legacy alias для supervisor.py
     "search_polyclinic": "get_polyclinics_by_address_v2",
     "search_school": "get_linked_schools_by_address_v2",
     "search_kindergarten": "get_kindergartens_v2",
@@ -218,7 +219,7 @@ INTENT_TO_TOOL_NAME: dict[str, str] = {
     "pensioner_categories": "get_pensioner_service_categories_v2",
     "pensioner_services": "get_pensioner_services_v2",
     "memorable_dates": "get_memorable_dates_today_v2",
-    "district_info": "get_district_info_by_address_v2",
+    "district_info": "get_district_info_v2",  # По названию района, не по адресу
 }
 
 
@@ -226,6 +227,7 @@ INTENT_TO_TOOL_NAME: dict[str, str] = {
 INTENT_REQUIRED_SLOTS: dict[str, list[str]] = {
     # Требуют адрес
     "search_mfc": ["address"],
+    "mfc_search": ["address"],  # Legacy alias для supervisor.py
     "search_polyclinic": ["address"],
     "search_school": ["address"],
     "search_management_company": ["address"],
@@ -237,6 +239,7 @@ INTENT_REQUIRED_SLOTS: dict[str, list[str]] = {
     # Требуют район
     "search_kindergarten": ["district"],
     "pensioner_services": ["district"],
+    "district_info": ["district"],  # Информация о районе требует название района
 
     # Не требуют обязательных параметров
     "road_works": [],
@@ -246,7 +249,6 @@ INTENT_REQUIRED_SLOTS: dict[str, list[str]] = {
     "search_sport_events": [],
     "pensioner_categories": [],
     "memorable_dates": [],
-    "district_info": [],
     "rag_search": [],
     "conversation": [],
 }

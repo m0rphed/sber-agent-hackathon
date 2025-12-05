@@ -1193,14 +1193,12 @@ class CityAppClient:
         # пока делаем фильтр на клиенте, если в ответе есть поле 'district' или аналог.
         if district and isinstance(data, list):
             filtered = [
-                item for item in data
-                if isinstance(item, dict)
-                and item.get('district') == district
+                item for item in data if isinstance(item, dict) and item.get('district') == district
             ]
             return filtered
 
         return data
-    
+
         # ---------------- Плановые работы (ГАТИ) -----------------
 
     def get_gati_orders_map(self, params: dict[str, str | int] | None = None):
@@ -1358,7 +1356,6 @@ class CityAppClient:
 
 
 if __name__ == '__main__':
-
     client = CityAppClient()
     user_address = 'ул. Танкиста Хрустицкого, д. 62, л. А'
     district = 'Кировский'
@@ -1482,7 +1479,7 @@ if __name__ == '__main__':
 
     # 10. MyPets (основной сервис)
     section('10. MyPets: категории рядом с адресом')
-    lat, lon = (coords or (None, None))
+    lat, lon = coords or (None, None)
     pets_all = client.get_mypets_all_category(
         location_latitude=lat,
         location_longitude=lon,

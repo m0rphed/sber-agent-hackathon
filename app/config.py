@@ -85,6 +85,9 @@ TOP_K = os.getenv('TOP_K', '5')
 API_GEO = os.getenv('API_GEO', 'https://yazzh-geo.gate.petersburg.ru')
 API_SITE = os.getenv('API_SITE', 'https://yazzh.gate.petersburg.ru')
 
+# Yandex Geocoder API (для геокодирования метро и адресов)
+YANDEX_API_KEY = os.getenv('YANDEX_API_KEY', '')
+
 # регион по умолчанию (78 = Санкт-Петербург)
 REGION_ID = os.getenv('REGION_ID', '78')
 
