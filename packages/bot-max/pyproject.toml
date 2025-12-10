@@ -1,13 +1,11 @@
 [project]
 name = "bot-max"
 version = "0.1.0"
-description = "MAX Bot - бот для MAX/VK Teams (maxapi)"
+description = "AI-бот городской помощник (для Санкт-Петербурга) в МAX-мессенджере"
 requires-python = ">=3.12"
 dependencies = [
-    "httpx>=0.28.1",
-    "langgraph-sdk>=0.2.10",
     "maxapi>=0.9.9",
-    "pydantic<=2.11.10",
+    "pydantic>=2.11.10",
     "python-dotenv>=1.2.1",
     "structlog>=25.5.0",
 ]
@@ -18,3 +16,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bot_max"]
+
+[tool.uv.sources]
+langgraph-client = { workspace = true }

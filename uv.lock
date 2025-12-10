@@ -11,8 +11,8 @@ members = [
     "bot-max",
     "bot-telegram",
     "langgraph-app",
+    "langgraph-client",
     "llm-city-assistant",
-    "shared",
     "streamlit-ui",
 ]
 
@@ -327,8 +327,6 @@ name = "bot-max"
 version = "0.1.0"
 source = { editable = "packages/bot-max" }
 dependencies = [
-    { name = "httpx" },
-    { name = "langgraph-sdk" },
     { name = "maxapi" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -337,10 +335,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "langgraph-sdk", specifier = ">=0.2.10" },
     { name = "maxapi", specifier = ">=0.9.9" },
-    { name = "pydantic", specifier = "<=2.11.10" },
+    { name = "pydantic", specifier = ">=2.11.10" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "structlog", specifier = ">=25.5.0" },
 ]
@@ -351,20 +347,18 @@ version = "0.1.0"
 source = { editable = "packages/bot-telegram" }
 dependencies = [
     { name = "aiogram" },
-    { name = "httpx" },
-    { name = "langgraph-sdk" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "rich" },
     { name = "structlog" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiogram", specifier = ">=3.22.0" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "langgraph-sdk", specifier = ">=0.2.10" },
-    { name = "pydantic", specifier = "<=2.11.10" },
+    { name = "pydantic", specifier = ">=2.0,<2.12" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "rich", specifier = ">=14.2.0" },
     { name = "structlog", specifier = ">=25.5.0" },
 ]
 
@@ -652,6 +646,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/f5/3599e48c5464580b73b236aafb20973b953cd2e7b44c7c2533de1d888446/cryptography-44.0.3-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:6866df152b581f9429020320e5eb9794c8780e90f7ccb021940d7f50ee00ae0b", size = 4301067, upload-time = "2025-05-02T19:35:31.547Z" },
     { url = "https://files.pythonhosted.org/packages/a7/6c/d2c48c8137eb39d0c193274db5c04a75dab20d2f7c3f81a7dcc3a8897701/cryptography-44.0.3-cp39-abi3-win32.whl", hash = "sha256:c138abae3a12a94c75c10499f1cbae81294a6f983b3af066390adee73f433028", size = 2775467, upload-time = "2025-05-02T19:35:33.805Z" },
     { url = "https://files.pythonhosted.org/packages/c9/ad/51f212198681ea7b0deaaf8846ee10af99fba4e894f67b353524eab2bbe5/cryptography-44.0.3-cp39-abi3-win_amd64.whl", hash = "sha256:5d186f32e52e66994dce4f766884bcb9c68b8da62d61d9d215bfe5fb56d21334", size = 3210375, upload-time = "2025-05-02T19:35:35.369Z" },
+]
+
+[[package]]
+name = "dadata"
+version = "25.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/bd/646b5332d749d79ddbd7431e8a73470ce3426353b89e24c0d880b2c98c1e/dadata-25.10.0.tar.gz", hash = "sha256:f07092e7ab8c111da8c3e9ca4e6f2ca7ce4338f30b7085df802c1393072675fb", size = 8057, upload-time = "2025-10-07T14:28:28.696Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a1/56/108a7b29b74858461c1afafa80d948389321db8e20f6b36836644cb9b354/dadata-25.10.0-py3-none-any.whl", hash = "sha256:a982aa1a900dc2c7b9946499de7fdc85e5d4ba1ff25207a1250f86fb0d4f2a13", size = 10218, upload-time = "2025-10-07T14:28:27.773Z" },
 ]
 
 [[package]]
@@ -1726,6 +1732,27 @@ inmem = [
 ]
 
 [[package]]
+name = "langgraph-client"
+version = "0.1.0"
+source = { editable = "libs/langgraph-client" }
+dependencies = [
+    { name = "httpx" },
+    { name = "langgraph-sdk" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "langgraph-sdk", specifier = ">=0.2.10" },
+    { name = "pydantic", specifier = ">=2.0,<2.12" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "structlog", specifier = ">=25.5.0" },
+]
+
+[[package]]
 name = "langgraph-prebuilt"
 version = "1.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1832,6 +1859,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "apscheduler" },
+    { name = "dadata" },
     { name = "huggingface-hub" },
     { name = "ipykernel" },
     { name = "langgraph-cli", extra = ["inmem"] },
@@ -1887,6 +1915,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "apscheduler", specifier = ">=3.11.1" },
+    { name = "dadata", specifier = ">=25.10.0" },
     { name = "huggingface-hub", specifier = ">=0.36.0" },
     { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.4.7" },
@@ -3875,23 +3904,6 @@ wheels = [
 ]
 
 [[package]]
-name = "shared"
-version = "0.1.0"
-source = { editable = "libs/shared" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "structlog" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pydantic", specifier = "<=2.11.10" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "structlog", specifier = ">=25.5.0" },
-]
-
-[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -4060,8 +4072,6 @@ name = "streamlit-ui"
 version = "0.1.0"
 source = { editable = "packages/streamlit-ui" }
 dependencies = [
-    { name = "httpx" },
-    { name = "langgraph-sdk" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "streamlit" },
@@ -4071,11 +4081,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "langgraph-sdk", specifier = ">=0.2.10" },
-    { name = "pydantic", specifier = "<=2.11.10" },
+    { name = "pydantic", specifier = ">=2.11.10" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "streamlit", specifier = ">=1.51.0" },
+    { name = "streamlit", specifier = ">=1.52.0" },
     { name = "streamlit-authenticator", specifier = ">=0.4.2" },
     { name = "structlog", specifier = ">=25.5.0" },
 ]

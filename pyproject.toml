@@ -45,6 +45,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "apscheduler>=3.11.1",
+    "dadata>=25.10.0",
     "huggingface-hub>=0.36.0",
     "ipykernel>=7.1.0",
     "langgraph-cli[inmem]>=0.4.7",
@@ -58,9 +59,7 @@ types = [
     "types-pyyaml>=6.0.12.20250915",
 ]
 
-# ══════════════════════════════════════════════════════════════
 # UV Workspaces Configuration
-# ══════════════════════════════════════════════════════════════
 [tool.uv.workspace]
 members = [
     "packages/*",
@@ -68,9 +67,11 @@ members = [
 ]
 
 [tool.uv.sources]
-shared = { workspace = true }
+langgraph-client = { workspace = true }
 langgraph-app = { workspace = true }
 streamlit-ui = { workspace = true }
 bot-telegram = { workspace = true }
 bot-max = { workspace = true }
+
+
 
