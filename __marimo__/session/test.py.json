@@ -1,0 +1,138 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.18.4"
+  },
+  "cells": [
+    {
+      "id": "Myqw",
+      "code_hash": "999f4bb21143f3883c1fa89ee4072ab6",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Hbol",
+      "code_hash": "c58561db5bfd32bd9281214a435dc5c9",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "HvKb",
+      "code_hash": "3a27b5546ea7d251eac4500bf4bfd5cc",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Successfully loaded extension \"marimo._output.md.PyconDetectorExtension\".\nSuccessfully imported extension module \"pymdownx.highlight\".\nSuccessfully loaded extension \"pymdownx.highlight.HighlightExtension\".\nSuccessfully loaded extension \"markdown.extensions.tables.TableExtension\".\nSuccessfully imported extension module \"pymdownx.arithmatex\".\nSuccessfully loaded extension \"pymdownx.arithmatex.ArithmatexExtension\".\nSuccessfully imported extension module \"pymdownx.tilde\".\nSuccessfully loaded extension \"pymdownx.tilde.DeleteSubExtension\".\nSuccessfully imported extension module \"pymdownx.caret\".\nSuccessfully loaded extension \"pymdownx.caret.InsertSupExtension\".\nSuccessfully imported extension module \"pymdownx.superfences\".\nSuccessfully imported extension module \"pymdownx.highlight\".\nSuccessfully loaded extension \"pymdownx.highlight.HighlightExtension\".\nSuccessfully loaded extension \"pymdownx.superfences.SuperFencesCodeExtension\".\nSuccessfully imported extension module \"pymdownx.tasklist\".\nSuccessfully loaded extension \"pymdownx.tasklist.TasklistExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.caption\".\nSuccessfully loaded extension \"pymdownx.blocks.caption.CaptionExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.tab\".\nSuccessfully loaded extension \"pymdownx.blocks.tab.TabExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.details\".\nSuccessfully loaded extension \"pymdownx.blocks.details.DetailsExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.admonition\".\nSuccessfully loaded extension \"pymdownx.blocks.admonition.AdmonitionExtension\".\nSuccessfully imported extension module \"pymdownx.critic\".\nSuccessfully imported extension module \"pymdownx._bypassnorm\".\nSuccessfully loaded extension \"pymdownx._bypassnorm.BypassNormExtension\".\nSuccessfully loaded extension \"pymdownx.critic.CriticExtension\".\nSuccessfully imported extension module \"pymdownx.emoji\".\nSuccessfully loaded extension \"pymdownx.emoji.EmojiExtension\".\nSuccessfully imported extension module \"pymdownx.keys\".\nSuccessfully loaded extension \"pymdownx.keys.KeysExtension\".\nSuccessfully imported extension module \"pymdownx.magiclink\".\nSuccessfully loaded extension \"pymdownx.magiclink.MagiclinkExtension\".\nSuccessfully loaded extension \"markdown.extensions.toc.TocExtension\".\nSuccessfully loaded extension \"markdown.extensions.footnotes.FootnoteExtension\".\nSuccessfully loaded extension \"markdown.extensions.sane_lists.SaneListExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.flexible_indent.FlexibleIndentExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.breakless_lists.BreaklessListsExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.external_links.ExternalLinksExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.iconify.IconifyExtension\".\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "Mhtn",
+      "code_hash": "8c6007c68a893f9235c300896926a9ff",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-ui-element object-id='HvKb-0' random-id='211edd0a-683c-5312-92e0-8373d0e98bfd'><marimo-button data-initial-value='0' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;\u0417\u0430\u043f\u0443\u0441\u043a \u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u043a API&lt;/span&gt;&lt;/span&gt;&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "aCfN",
+      "code_hash": "633b4c705fcd67d55b3037b70ddcb115",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "GqDi",
+      "code_hash": "4a89eeafc53ec0a89def49e8a670211d",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Successfully loaded extension \"marimo._output.md.PyconDetectorExtension\".\nSuccessfully imported extension module \"pymdownx.highlight\".\nSuccessfully loaded extension \"pymdownx.highlight.HighlightExtension\".\nSuccessfully loaded extension \"markdown.extensions.tables.TableExtension\".\nSuccessfully imported extension module \"pymdownx.arithmatex\".\nSuccessfully loaded extension \"pymdownx.arithmatex.ArithmatexExtension\".\nSuccessfully imported extension module \"pymdownx.tilde\".\nSuccessfully loaded extension \"pymdownx.tilde.DeleteSubExtension\".\nSuccessfully imported extension module \"pymdownx.caret\".\nSuccessfully loaded extension \"pymdownx.caret.InsertSupExtension\".\nSuccessfully imported extension module \"pymdownx.superfences\".\nSuccessfully imported extension module \"pymdownx.highlight\".\nSuccessfully loaded extension \"pymdownx.highlight.HighlightExtension\".\nSuccessfully loaded extension \"pymdownx.superfences.SuperFencesCodeExtension\".\nSuccessfully imported extension module \"pymdownx.tasklist\".\nSuccessfully loaded extension \"pymdownx.tasklist.TasklistExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.caption\".\nSuccessfully loaded extension \"pymdownx.blocks.caption.CaptionExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.tab\".\nSuccessfully loaded extension \"pymdownx.blocks.tab.TabExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.details\".\nSuccessfully loaded extension \"pymdownx.blocks.details.DetailsExtension\".\nSuccessfully imported extension module \"pymdownx.blocks.admonition\".\nSuccessfully loaded extension \"pymdownx.blocks.admonition.AdmonitionExtension\".\nSuccessfully imported extension module \"pymdownx.critic\".\nSuccessfully imported extension module \"pymdownx._bypassnorm\".\nSuccessfully loaded extension \"pymdownx._bypassnorm.BypassNormExtension\".\nSuccessfully loaded extension \"pymdownx.critic.CriticExtension\".\nSuccessfully imported extension module \"pymdownx.emoji\".\nSuccessfully loaded extension \"pymdownx.emoji.EmojiExtension\".\nSuccessfully imported extension module \"pymdownx.keys\".\nSuccessfully loaded extension \"pymdownx.keys.KeysExtension\".\nSuccessfully imported extension module \"pymdownx.magiclink\".\nSuccessfully loaded extension \"pymdownx.magiclink.MagiclinkExtension\".\nSuccessfully loaded extension \"markdown.extensions.toc.TocExtension\".\nSuccessfully loaded extension \"markdown.extensions.footnotes.FootnoteExtension\".\nSuccessfully loaded extension \"markdown.extensions.sane_lists.SaneListExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.flexible_indent.FlexibleIndentExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.breakless_lists.BreaklessListsExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.external_links.ExternalLinksExtension\".\nSuccessfully loaded extension \"marimo._output.md_extensions.iconify.IconifyExtension\".\n[\n    '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e',\n    '\u0412\u0430\u0441\u0438\u043b\u0435\u043e\u0441\u0442\u0440\u043e\u0432\u0441\u043a\u0438\u0439',\n    '\u041f\u0435\u0442\u0440\u043e\u0433\u0440\u0430\u0434\u0441\u043a\u0438\u0439',\n    '\u041a\u0430\u043b\u0438\u043d\u0438\u043d\u0441\u043a\u0438\u0439',\n    '\u041a\u0440\u0430\u0441\u043d\u043e\u0433\u0432\u0430\u0440\u0434\u0435\u0439\u0441\u043a\u0438\u0439',\n    '\u041d\u0435\u0432\u0441\u043a\u0438\u0439',\n    '\u0424\u0440\u0443\u043d\u0437\u0435\u043d\u0441\u043a\u0438\u0439',\n    '\u041c\u043e\u0441\u043a\u043e\u0432\u0441\u043a\u0438\u0439',\n    '\u041a\u0438\u0440\u043e\u0432\u0441\u043a\u0438\u0439',\n    '\u041a\u0440\u0430\u0441\u043d\u043e\u0441\u0435\u043b\u044c\u0441\u043a\u0438\u0439',\n    '\u041f\u0435\u0442\u0440\u043e\u0434\u0432\u043e\u0440\u0446\u043e\u0432\u044b\u0439',\n    '\u0426\u0435\u043d\u0442\u0440\u0430\u043b\u044c\u043d\u044b\u0439',\n    '\u0410\u0434\u043c\u0438\u0440\u0430\u043b\u0442\u0435\u0439\u0441\u043a\u0438\u0439',\n    '\u041f\u0440\u0438\u043c\u043e\u0440\u0441\u043a\u0438\u0439',\n    '\u041f\u0443\u0448\u043a\u0438\u043d\u0441\u043a\u0438\u0439',\n    '\u0412\u044b\u0431\u043e\u0440\u0433\u0441\u043a\u0438\u0439',\n    '\u041a\u043e\u043b\u043f\u0438\u043d\u0441\u043a\u0438\u0439',\n    '\u041a\u0443\u0440\u043e\u0440\u0442\u043d\u044b\u0439',\n    '\u041a\u0440\u043e\u043d\u0448\u0442\u0430\u0434\u0442\u0441\u043a\u0438\u0439',\n    '\u0413\u0430\u0442\u0447\u0438\u043d\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0412\u0441\u0435\u0432\u043e\u043b\u043e\u0436\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041b\u0443\u0436\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041f\u0440\u0438\u043e\u0437\u0435\u0440\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041a\u0438\u043d\u0433\u0438\u0441\u0435\u043f\u043f\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0422\u043e\u0441\u043d\u0435\u043d\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041a\u0438\u0440\u043e\u0432\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0421\u043e\u0441\u043d\u043e\u0432\u043e\u0431\u043e\u0440\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0412\u043e\u043b\u0445\u043e\u0432\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0412\u044b\u0431\u043e\u0440\u0433\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041b\u043e\u043c\u043e\u043d\u043e\u0441\u043e\u0432\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0411\u043e\u043a\u0441\u0438\u0442\u043e\u0433\u043e\u0440\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041a\u0438\u0440\u0438\u0448\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041b\u043e\u0434\u0435\u0439\u043d\u043e\u043f\u043e\u043b\u044c\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u041f\u043e\u0434\u043f\u043e\u0440\u043e\u0436\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0421\u043b\u0430\u043d\u0446\u0435\u0432\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0422\u0438\u0445\u0432\u0438\u043d\u0441\u043a\u0438\u0439 \u041b\u041e',\n    '\u0412\u043e\u043b\u043e\u0441\u043e\u0432\u0441\u043a\u0438\u0439 \u041b\u041e'\n]\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "zEFG",
+      "code_hash": null,
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Mkof",
+      "code_hash": "3d963916c8ea46ac2e22cb7fe2e504f6",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "agFD",
+      "code_hash": "6f10d5682b7532ef42fddb3b953b0290",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "application/json": "[\"\\u041d\\u0435\\u0438\\u0437\\u0432\\u0435\\u0441\\u0442\\u043d\\u043e\", \"\\u0412\\u0430\\u0441\\u0438\\u043b\\u0435\\u043e\\u0441\\u0442\\u0440\\u043e\\u0432\\u0441\\u043a\\u0438\\u0439\", \"\\u041f\\u0435\\u0442\\u0440\\u043e\\u0433\\u0440\\u0430\\u0434\\u0441\\u043a\\u0438\\u0439\", \"\\u041a\\u0430\\u043b\\u0438\\u043d\\u0438\\u043d\\u0441\\u043a\\u0438\\u0439\", \"\\u041a\\u0440\\u0430\\u0441\\u043d\\u043e\\u0433\\u0432\\u0430\\u0440\\u0434\\u0435\\u0439\\u0441\\u043a\\u0438\\u0439\", \"\\u041d\\u0435\\u0432\\u0441\\u043a\\u0438\\u0439\", \"\\u0424\\u0440\\u0443\\u043d\\u0437\\u0435\\u043d\\u0441\\u043a\\u0438\\u0439\", \"\\u041c\\u043e\\u0441\\u043a\\u043e\\u0432\\u0441\\u043a\\u0438\\u0439\", \"\\u041a\\u0438\\u0440\\u043e\\u0432\\u0441\\u043a\\u0438\\u0439\", \"\\u041a\\u0440\\u0430\\u0441\\u043d\\u043e\\u0441\\u0435\\u043b\\u044c\\u0441\\u043a\\u0438\\u0439\", \"\\u041f\\u0435\\u0442\\u0440\\u043e\\u0434\\u0432\\u043e\\u0440\\u0446\\u043e\\u0432\\u044b\\u0439\", \"\\u0426\\u0435\\u043d\\u0442\\u0440\\u0430\\u043b\\u044c\\u043d\\u044b\\u0439\", \"\\u0410\\u0434\\u043c\\u0438\\u0440\\u0430\\u043b\\u0442\\u0435\\u0439\\u0441\\u043a\\u0438\\u0439\", \"\\u041f\\u0440\\u0438\\u043c\\u043e\\u0440\\u0441\\u043a\\u0438\\u0439\", \"\\u041f\\u0443\\u0448\\u043a\\u0438\\u043d\\u0441\\u043a\\u0438\\u0439\", \"\\u0412\\u044b\\u0431\\u043e\\u0440\\u0433\\u0441\\u043a\\u0438\\u0439\", \"\\u041a\\u043e\\u043b\\u043f\\u0438\\u043d\\u0441\\u043a\\u0438\\u0439\", \"\\u041a\\u0443\\u0440\\u043e\\u0440\\u0442\\u043d\\u044b\\u0439\", \"\\u041a\\u0440\\u043e\\u043d\\u0448\\u0442\\u0430\\u0434\\u0442\\u0441\\u043a\\u0438\\u0439\"]"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "dGrF",
+      "code_hash": null,
+      "outputs": [],
+      "console": []
+    }
+  ]
+}
