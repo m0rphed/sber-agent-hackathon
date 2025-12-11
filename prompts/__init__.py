@@ -87,15 +87,15 @@ class _PromptLoader:
 
         # сопоставление имен атрибутов с файлами
         filename_map = {
-            'CITY_AGENT_PROMPT': 'city_agent_prompt.txt',
+            'CITY_AGENT_PROMPT':        'city_agent_prompt.txt',
             'TOOL_AGENT_SYSTEM_PROMPT': 'tool_agent_system.txt',
             'INTENT_CLASSIFIER_PROMPT': 'intent_classifier.txt',
-            'INTENT_ONLY_PROMPT': 'intent_only.txt',
+            'INTENT_ONLY_PROMPT':       'intent_only.txt',
             'ENTITY_EXTRACTION_PROMPT': 'entity_extraction.jinja2',
-            'CONVERSATION_PROMPT': 'conversation.txt',
-            'QUERY_REWRITE_PROMPT': 'rag/query_rewrite.txt',
-            'DOCUMENT_GRADE_PROMPT': 'rag/document_grade.txt',
-            'HYBRID_INTENT_PROMPT': 'hybrid_intent_classifier.txt',
+            'CONVERSATION_PROMPT':      'conversation.txt',
+            'QUERY_REWRITE_PROMPT':     'rag/query_rewrite.txt',
+            'DOCUMENT_GRADE_PROMPT':    'rag/document_grade.txt',
+            'HYBRID_INTENT_PROMPT':     'hybrid_intent_classifier.txt',
         }
 
         if name not in filename_map:
