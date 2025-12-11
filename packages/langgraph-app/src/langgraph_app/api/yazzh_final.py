@@ -257,20 +257,70 @@ class ApiClientUnified:
         self,
         lat: float,
         lon: float,
-        distance_km: int = 5,  # TODO: использовать разумное значение по умолчанию
+        distance_km: int = 5,  # базовое значение по умолчанию
     ) -> dict[str, Any]:
         """
         📋 Возвращает ближайший МФЦ по координатам.
 
         Endpoint: GET /mfc/nearest/
+
+        Логика:
+        - делаем запрос с distance = distance_km (по умолчанию 5);
+        - если distance_km != 5 — просто возвращаем результат как есть;
+        - если distance_km == 5 и данных нет — повторяем запрос с distance = 10.
         """
         url = f'{self.api_site}/mfc/nearest/'
-        params = {
-            'lat': lat,
-            'lon': lon,
-            'distance': distance_km,
-        }
-        return await self._get_request('get_mfc_nearest_by_coords', url, params)
+
+        async def _call(distance: int) -> dict[str, Any]:
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'distance': distance,
+            }
+            return await self._get_request('get_mfc_nearest_by_coords', url, params)
+
+        # 1) первый запрос — на заданной дистанции
+        res = await _call(distance_km)
+
+        # если явно попросили не 5 км — не расширяем радиус скрытно
+        if distance_km != 5:
+            return res
+
+        # при любой ошибке не полезем в fallback
+        if res.get('status_code') != 200:
+            return res
+
+        json_data = res.get('json')
+        if json_data is None:
+            return res
+
+        # 2) пытаемся понять, что «ничего не нашли»
+        is_empty = False
+
+        if isinstance(json_data, dict):
+            # типичный случай: {"data": [...]}
+            if 'data' in json_data:
+                data_field = json_data['data']
+                if isinstance(data_field, list) and len(data_field) == 0:
+                    is_empty = True
+            else:
+                # если словарь пустой {}
+                if len(json_data) == 0:
+                    is_empty = True
+
+        elif isinstance(json_data, list):
+            # если API вернёт тупо список
+            if len(json_data) == 0:
+                is_empty = True
+
+        # если что-то нашли — возвращаем, больше не дергаем API
+        if not is_empty:
+            return res
+
+        # 3) на 5 км пусто — пробуем 10 км
+        fallback_res = await _call(10)
+        return fallback_res
+
 
     # =========================================================================
     # ПОЛИКЛИНИКИ
@@ -539,20 +589,6 @@ class ApiClientUnified:
         return await self._get_request('get_pensioner_services', url, params)
 
     # =========================================================================
-    # ПАМЯТНЫЕ ДАТЫ
-    # =========================================================================
-
-    async def get_memorable_dates(self, date: str) -> dict[str, Any]:
-        """
-        📅 Памятные даты.
-
-        Endpoint: GET /memorable-dates/
-        """
-        url = f'{self.api_site}/memorable-dates/'
-        params = {'date': date}
-        return await self._get_request('get_memorable_dates', url, params)
-
-    # =========================================================================
     # ДОРОЖНЫЕ РАБОТЫ
     # =========================================================================
 
@@ -747,12 +783,12 @@ class ApiClientUnified:
         return await self._get_request('get_news', url, params)
 
     # =========================================================================
-    # ПАМЯТНЫЕ ДАТЫ (дополнительные)
+    # ПАМЯТНЫЕ ДАТЫ
     # =========================================================================
 
     async def get_memorable_dates_all(self) -> dict[str, Any]:
         """
-        📅 Все памятные даты.
+        📅 Все памятные даты. (Список всех памятных дат с возрастанием по ID)
 
         Endpoint: GET /memorable_dates/
         """
