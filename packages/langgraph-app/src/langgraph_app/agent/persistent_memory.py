@@ -14,6 +14,7 @@ from typing import cast
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables.config import CONFIG_KEYS, COPIABLE_KEYS
 from langgraph.checkpoint.sqlite import RunnableConfig, SqliteSaver
+
 from langgraph_app.config import MEMORY_DB_PATH
 
 # глобальные объекты для сохранения состояния

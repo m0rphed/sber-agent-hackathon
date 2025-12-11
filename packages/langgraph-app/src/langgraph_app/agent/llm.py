@@ -3,7 +3,9 @@
 
 Использует централизованную конфигурацию из app.config.
 """
+
 from langchain_gigachat import GigaChat
+
 from langgraph_app.config import (
     GIGACHAT_CREDENTIALS,
     GIGACHAT_SCOPE,
@@ -30,6 +32,7 @@ def get_llm_for_intent_routing() -> GigaChat:
         # frequency_penalty=0.0,
         # presence_penalty=0.0,
     )
+
 
 def get_llm(
     temperature: float | None = None,
@@ -102,7 +105,7 @@ def get_llm_for_conversation(config: AgentConfig | None = None) -> GigaChat:
     )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     llm = get_llm()
-    response = llm.invoke("Привет! Расскажи кратко о Санкт-Петербурге.")
+    response = llm.invoke('Привет! Расскажи кратко о Санкт-Петербурге.')
     print(response.content)

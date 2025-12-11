@@ -40,6 +40,8 @@ dependencies = [
     "typer>=0.20.0",
     "uvicorn>=0.38.0",
     "ymaps>=1.3",
+    # локальный пакет с LangGraph API
+    "langgraph-app"
 ]
 
 [dependency-groups]
@@ -57,16 +59,11 @@ dev = [
     "transformers>=4.57.3",
     "ymaps>=1.3",
 ]
-types = [
-    "types-pyyaml>=6.0.12.20250915",
-]
+types = ["types-pyyaml>=6.0.12.20250915"]
 
 # UV Workspaces Configuration
 [tool.uv.workspace]
-members = [
-    "packages/*",
-    "libs/*",
-]
+members = ["packages/*", "libs/*"]
 
 [tool.uv.sources]
 langgraph-client = { workspace = true }
@@ -74,6 +71,3 @@ langgraph-app = { workspace = true }
 streamlit-ui = { workspace = true }
 bot-telegram = { workspace = true }
 bot-max = { workspace = true }
-
-
-

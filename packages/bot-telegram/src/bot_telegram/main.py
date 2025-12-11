@@ -1,13 +1,21 @@
 import asyncio
+import logging
+import os
 
 # from agent_sdk.langgraph_functions import chat_with_agent
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.utils.chat_action import ChatActionSender
+from dotenv import load_dotenv
 import rich
 
-from bot_telegram.config import LOG_LEVEL, TOKEN_TG
+load_dotenv()
+
+TOKEN_TG = os.getenv('TOKEN_TG', None)
+
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'DEBUG').upper()
+logging.basicConfig(level=LOG_LEVEL)
 
 if not TOKEN_TG:
     raise ValueError('TOKEN_TG environment variable is not set.')
