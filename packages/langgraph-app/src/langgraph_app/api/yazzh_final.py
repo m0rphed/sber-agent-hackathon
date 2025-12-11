@@ -269,14 +269,15 @@ class ApiClientUnified:
         - если distance_km != 5 — просто возвращаем результат как есть;
         - если distance_km == 5 и данных нет — повторяем запрос с distance = 10.
         """
-        url = f'{self.api_site}/mfc/nearest/'
+        url = f'{self.api_site}/mfc/nearest'
 
         async def _call(distance: int) -> dict[str, Any]:
             params = {
-                'lat': lat,
-                'lon': lon,
+                'user_pos': f'{lon} {lat}',
                 'distance': distance,
             }
+            print(params)
+
             return await self._get_request('get_mfc_nearest_by_coords', url, params)
 
         # 1) первый запрос — на заданной дистанции
@@ -321,7 +322,6 @@ class ApiClientUnified:
         fallback_res = await _call(10)
         return fallback_res
 
-
     # =========================================================================
     # ПОЛИКЛИНИКИ
     # =========================================================================
@@ -358,11 +358,11 @@ class ApiClientUnified:
         """
         🏫 Возвращает школу по ID.
 
-        Endpoint: GET /school/id/
+        Endpoint: GET /school/{school_id}
         """
-        url = f'{self.api_site}/school/id/'
-        params = {'id': school_id}
-        return await self._get_request('get_school_by_id', url, params)
+        url = f'{self.api_site}/school/{school_id}'
+        #params = {'id': school_id}
+        return await self._get_request('get_school_by_id', url)
 
     async def get_schools_map(
         self,
@@ -476,10 +476,10 @@ class ApiClientUnified:
             params['end_date'] = end_date
         return await self._get_request('get_sport_events', url, params)
 
-    async def get_sportgrounds(
+    async def get_sportgrounds( #TODO: Дописать возможность передавать массив строк, можно добавить поиск ближайшей площадки к адресу
         self,
         district: str | None = None,
-        object_type: str | None = None,
+        types: str | None | list[str] = None,
         count: int = 10,
     ) -> dict[str, Any]:
         """
@@ -491,17 +491,17 @@ class ApiClientUnified:
         params: dict[str, Any] = {'count': count, 'page': 1}
         if district:
             params['district'] = district
-        if object_type:
-            params['object_type'] = object_type
+        if types:
+            params['types'] = types
         return await self._get_request('get_sportgrounds', url, params)
 
     async def get_sportgrounds_count(self) -> dict[str, Any]:
         """
         🏟️ Статистика спортивных площадок.
 
-        Endpoint: GET /sportgrounds/map/count/
+        Endpoint: GET /sportgrounds/count/
         """
-        url = f'{self.api_site}/sportgrounds/map/count/'
+        url = f'{self.api_site}/sportgrounds/count/'
         return await self._get_request('get_sportgrounds_count', url)
 
     # =========================================================================
