@@ -1,8 +1,19 @@
+"""
+Telegram Bot для городского помощника.
+
+Использует langgraph-client для связи с LangGraph API.
+
+Запуск:
+    `uv run --package bot-telegram python -m bot_telegram`
+    - или:
+    `uv run --package bot-telegram python main.py`
+"""
+
 import asyncio
 import logging
 import os
 
-# from agent_sdk.langgraph_functions import chat_with_agent
+# from langgraph_client.langgraph_functions import chat_with_agent
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -13,7 +24,7 @@ import rich
 load_dotenv()
 
 TOKEN_TG = os.getenv('TOKEN_TG', None)
-
+LANGGRAPH_API_URL = os.getenv('LANGGRAPH_API_URL', 'http://localhost:2024')
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'DEBUG').upper()
 logging.basicConfig(level=LOG_LEVEL)
 

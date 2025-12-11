@@ -4,7 +4,9 @@ MAX Bot для городского помощника.
 Использует langgraph-client для связи с LangGraph API.
 
 Запуск:
-    uv run --package bot-max python main.py
+    `uv run --package bot-max python -m bot_max`
+    - или:
+    `uv run --package bot-max python main.py`
 """
 
 import asyncio
@@ -13,7 +15,7 @@ import os
 
 from dotenv import load_dotenv
 
-# from langgraph_client import chat_with_agent
+# from langgraph_client.langgraph_functions import chat_with_agent
 from maxapi import Bot, Dispatcher
 from maxapi.filters import F
 from maxapi.types import Command, MessageCreated
