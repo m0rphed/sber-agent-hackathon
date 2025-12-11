@@ -5,13 +5,17 @@
 - геокодирование двух адресов (с кешем в SQLite)
 - длина пешего и автомобильного маршрутов
 - координаты маршрута (для интерактивной карты / фронтенда)
-- кеш графов OSM на диске (graphml + gpickle) и в памяти процесса
+- кеш графов OSM на диске (graphml + pickle) и в памяти процесса
+
+Конфигурация:
+- Все настройки берутся из langgraph_app.config (GeoConfig)
+- Пути относительно DATA_DIR (в Docker это /app/data, монтируется как volume)
+- Переменные окружения: DATA_DIR, GEO_CITY_NAME, GEO_GRAPHS_SUBDIR и др.
 """
+
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
-import os
-from pathlib import Path
 import pickle
 import sqlite3
 
@@ -19,35 +23,25 @@ import networkx as nx
 import osmnx as ox
 import rich
 
+from langgraph_app.config import get_geo_config, get_geo_paths
+
 # -----------------------------
-# Настройки и пути
+# Настройки osmnx
 # -----------------------------
 
-_CITY_NAME = os.getenv('SPB_CITY_NAME', 'Санкт-Петербург, Россия')
+
+def _configure_osmnx() -> None:
+    """
+    Настраивает osmnx с путями из конфига
+    """
+    paths = get_geo_paths()
+    ox.settings.use_cache = True
+    ox.settings.cache_folder = str(paths['osmnx_cache'])
+    ox.settings.log_console = True
 
 
-def _get_BASE_DIR():
-    # В .ipynb __file__ может не быть, поэтому аккуратно:
-    if '__file__' in globals():
-        return Path(__file__).resolve().parent
-    return Path(os.getcwd())
-
-
-BASE_DIR = _get_BASE_DIR() if not (base := os.getenv('OSM_CACHE_DIR_SPB')) else Path(base)
-
-DATA_DIR = Path(os.getenv('SPB_ROUTE_DATA_DIR', BASE_DIR / 'data'))
-GRAPH_DIR = DATA_DIR / 'graphs'
-GEOCODE_DB_PATH = DATA_DIR / 'geocode_cache.sqlite3'
-
-WALK_GRAPH_FILE = GRAPH_DIR / 'spb_walk.graphml'
-DRIVE_GRAPH_FILE = GRAPH_DIR / 'spb_drive.graphml'
-
-GPICKLE_WALK_FILE = GRAPH_DIR / 'spb_walk.gpickle'
-GPICKLE_DRIVE_FILE = GRAPH_DIR / 'spb_drive.gpickle'
-
-ox.settings.use_cache = True
-ox.settings.cache_folder = DATA_DIR / 'osmnx_cache'
-ox.settings.log_console = True
+# Вызываем при импорте модуля
+_configure_osmnx()
 
 
 @dataclass(slots=True)
@@ -63,8 +57,9 @@ class RouteResult:
 
 
 def _ensure_dirs() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    GRAPH_DIR.mkdir(parents=True, exist_ok=True)
+    paths = get_geo_paths()
+    paths['data_dir'].mkdir(parents=True, exist_ok=True)
+    paths['graph_dir'].mkdir(parents=True, exist_ok=True)
 
 
 def init_geocode_db() -> None:
@@ -72,7 +67,8 @@ def init_geocode_db() -> None:
     Создаёт SQLite-БД для кеша геокодирования, если её ещё нет
     """
     _ensure_dirs()
-    with sqlite3.connect(GEOCODE_DB_PATH) as conn:
+    paths = get_geo_paths()
+    with sqlite3.connect(paths['geocode_db']) as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS geocode_cache (
@@ -104,10 +100,12 @@ def geocode_with_cache(address: str) -> tuple[float, float]:
     Если Nominatim не смог найти или вернул ошибку — бросает GeocodingError.
     """
     init_geocode_db()
-    full = f'{address}, {_CITY_NAME}'
+    geo_cfg = get_geo_config()
+    paths = get_geo_paths()
+    full = f'{address}, {geo_cfg.city_name}'
 
     # 1) Проверяем кеш
-    with sqlite3.connect(GEOCODE_DB_PATH) as conn:
+    with sqlite3.connect(paths['geocode_db']) as conn:
         cur = conn.cursor()
         cur.execute(
             'SELECT lat, lon FROM geocode_cache WHERE full_address = ?',
@@ -129,7 +127,7 @@ def geocode_with_cache(address: str) -> tuple[float, float]:
         raise GeocodingError(f'Nominatim не вернул координаты для: {full}')
 
     # 3) Сохраняем в кеш
-    with sqlite3.connect(GEOCODE_DB_PATH) as conn:
+    with sqlite3.connect(paths['geocode_db']) as conn:
         conn.execute(
             'INSERT OR REPLACE INTO geocode_cache (full_address, lat, lon) VALUES (?, ?, ?)',
             (full, float(lat), float(lon)),
@@ -150,30 +148,33 @@ def download_and_save_graphs(logging: bool = True) -> tuple[nx.MultiDiGraph, nx.
     Вызывается только если кеш пуст.
     """
     _ensure_dirs()
+    geo_cfg = get_geo_config()
+    paths = get_geo_paths()
+
     if logging:
         rich.print('[yellow]Скачиваю пешеходный граф…[/yellow]')
 
-    G_walk = ox.graph_from_place(_CITY_NAME, network_type='walk')
+    G_walk = ox.graph_from_place(geo_cfg.city_name, network_type='walk')
 
     if logging:
         rich.print('[yellow]Скачиваю автомобильный граф…[/yellow]')
 
-    G_drive = ox.graph_from_place(_CITY_NAME, network_type='drive')
+    G_drive = ox.graph_from_place(geo_cfg.city_name, network_type='drive')
 
     # TODO: при желании можно упростить графы (project_graph, truncate и т.п.)
 
     if logging:
-        rich.print('[yellow]Сохраняю графы (graphml + gpickle)…[/yellow]')
+        rich.print('[yellow]Сохраняю графы (graphml + pickle)…[/yellow]')
 
-    ox.save_graphml(G_walk, WALK_GRAPH_FILE)
-    ox.save_graphml(G_drive, DRIVE_GRAPH_FILE)
+    ox.save_graphml(G_walk, paths['walk_graphml'])
+    ox.save_graphml(G_drive, paths['drive_graphml'])
 
     if logging:
         rich.print('[yellow]Создаю pickle кеш…[/yellow]')
 
-    with open(GPICKLE_WALK_FILE, 'wb') as f:
+    with open(paths['walk_pickle'], 'wb') as f:
         pickle.dump(G_walk, f, protocol=pickle.HIGHEST_PROTOCOL)
-    with open(GPICKLE_DRIVE_FILE, 'wb') as f:
+    with open(paths['drive_pickle'], 'wb') as f:
         pickle.dump(G_drive, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     return G_walk, G_drive
@@ -185,29 +186,30 @@ def _load_graphs_from_disk(logging: bool = True) -> tuple[nx.MultiDiGraph, nx.Mu
     Пытается сначала читать бинарный pickle, потом graphml, в крайнем случае — качает.
     """
     _ensure_dirs()
+    paths = get_geo_paths()
 
     # 1) быстрый бинарный кеш (обычный pickle)
-    if GPICKLE_WALK_FILE.exists() and GPICKLE_DRIVE_FILE.exists():
+    if paths['walk_pickle'].exists() and paths['drive_pickle'].exists():
         if logging:
             rich.print('[dim]Загружаю графы из pickle…[/dim]')
-        with open(GPICKLE_WALK_FILE, 'rb') as f:
+        with open(paths['walk_pickle'], 'rb') as f:
             G_walk = pickle.load(f)
-        with open(GPICKLE_DRIVE_FILE, 'rb') as f:
+        with open(paths['drive_pickle'], 'rb') as f:
             G_drive = pickle.load(f)
         return G_walk, G_drive
 
     # 2) Если pickle нет, пробуем graphml
-    if WALK_GRAPH_FILE.exists() and DRIVE_GRAPH_FILE.exists():
+    if paths['walk_graphml'].exists() and paths['drive_graphml'].exists():
         if logging:
             rich.print('[dim]Загружаю графы из graphml…[/dim]')
-        G_walk = ox.load_graphml(WALK_GRAPH_FILE)
-        G_drive = ox.load_graphml(DRIVE_GRAPH_FILE)
+        G_walk = ox.load_graphml(paths['walk_graphml'])
+        G_drive = ox.load_graphml(paths['drive_graphml'])
 
         if logging:
             rich.print('[yellow]Создаю pickle кеш…[/yellow]')
-        with open(GPICKLE_WALK_FILE, 'wb') as f:
+        with open(paths['walk_pickle'], 'wb') as f:
             pickle.dump(G_walk, f, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(GPICKLE_DRIVE_FILE, 'wb') as f:
+        with open(paths['drive_pickle'], 'wb') as f:
             pickle.dump(G_drive, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         return G_walk, G_drive
@@ -306,8 +308,9 @@ def build_routes_for_addresses(
     - из сервиса (FastAPI endpoint),
     - из Jupyter (.ipynb) для отрисовки маршрута на интерактивной карте.
     """
+    geo_cfg = get_geo_config()
     if logging:
-        print(f'Геокодирую адреса в пределах {_CITY_NAME}…')
+        print(f'Геокодирую адреса в пределах {geo_cfg.city_name}…')
 
     origin = geocode_with_cache(address_from)
     dest = geocode_with_cache(address_to)
@@ -336,7 +339,7 @@ def build_routes_for_addresses(
 
 
 # -----------------------------
-# GeoJSON helper (под фронт)
+# GeoJSON helper (под фронтенд)
 # -----------------------------
 
 

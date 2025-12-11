@@ -226,6 +226,45 @@ class MemoryConfig:
 
 
 @dataclass(frozen=True)
+class GeoConfig:
+    """
+    Конфигурация geo-модуля (маршруты, геокодирование).
+
+    Все пути относительно DATA_DIR (в Docker это /app/data).
+    """
+
+    city_name: str = 'Санкт-Петербург, Россия'
+    """
+    Название города для геокодирования и загрузки графов OSM
+    """
+
+    graphs_subdir: str = 'graphs'
+    """
+    Подпапка для хранения графов OSM (внутри DATA_DIR)
+    """
+
+    geocode_db_name: str = 'geocode_cache.sqlite3'
+    """
+    Имя файла SQLite-кеша геокодирования
+    """
+
+    osmnx_cache_subdir: str = 'osmnx_cache'
+    """
+    Подпапка для кеша osmnx
+    """
+
+    walk_graph_name: str = 'spb_walk'
+    """
+    Базовое имя пешеходного графа (без расширения)
+    """
+
+    drive_graph_name: str = 'spb_drive'
+    """
+    Базовое имя автомобильного графа (без расширения)
+    """
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     """
     Полная конфигурация агента.
@@ -297,6 +336,77 @@ def reset_agent_config() -> None:
     """
     global _agent_config
     _agent_config = None
+
+
+# =============================================================================
+# Geo Config (Singleton)
+# =============================================================================
+
+_geo_config: GeoConfig | None = None
+
+
+def get_geo_config() -> GeoConfig:
+    """
+    Возвращает глобальный GeoConfig.
+
+    Читает значения из переменных окружения при первом вызове.
+    """
+    global _geo_config
+
+    if _geo_config is None:
+        city_name = os.getenv('GEO_CITY_NAME', 'Санкт-Петербург, Россия')
+        graphs_subdir = os.getenv('GEO_GRAPHS_SUBDIR', 'graphs')
+        geocode_db = os.getenv('GEO_GEOCODE_DB', 'geocode_cache.sqlite3')
+        osmnx_cache = os.getenv('GEO_OSMNX_CACHE', 'osmnx_cache')
+
+        _geo_config = GeoConfig(
+            city_name=city_name,
+            graphs_subdir=graphs_subdir,
+            geocode_db_name=geocode_db,
+            osmnx_cache_subdir=osmnx_cache,
+        )
+
+    return _geo_config
+
+
+def get_geo_paths() -> dict[str, Path]:
+    """
+    Возвращает все пути для geo-модуля.
+
+    Returns:
+        dict с ключами:
+        - data_dir: корневая директория данных
+        - graph_dir: директория графов OSM
+        - geocode_db: путь к SQLite кешу геокодирования
+        - osmnx_cache: директория кеша osmnx
+        - walk_graphml: путь к пешеходному графу (.graphml)
+        - drive_graphml: путь к автомобильному графу (.graphml)
+        - walk_pickle: путь к пешеходному графу (.pickle)
+        - drive_pickle: путь к автомобильному графу (.pickle)
+    """
+    geo_cfg = get_geo_config()
+    data_dir = Path(os.getenv('DATA_DIR', 'data'))
+
+    graph_dir = data_dir / geo_cfg.graphs_subdir
+
+    return {
+        'data_dir': data_dir,
+        'graph_dir': graph_dir,
+        'geocode_db': data_dir / geo_cfg.geocode_db_name,
+        'osmnx_cache': data_dir / geo_cfg.osmnx_cache_subdir,
+        'walk_graphml': graph_dir / f'{geo_cfg.walk_graph_name}.graphml',
+        'drive_graphml': graph_dir / f'{geo_cfg.drive_graph_name}.graphml',
+        'walk_pickle': graph_dir / f'{geo_cfg.walk_graph_name}.pickle',
+        'drive_pickle': graph_dir / f'{geo_cfg.drive_graph_name}.pickle',
+    }
+
+
+def reset_geo_config() -> None:
+    """
+    Сбросить geo конфиг (для тестов)
+    """
+    global _geo_config
+    _geo_config = None
 
 
 # =============================================================================
