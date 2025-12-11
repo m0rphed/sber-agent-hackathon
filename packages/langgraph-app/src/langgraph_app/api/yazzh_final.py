@@ -206,11 +206,163 @@ class ApiClientUnified:
         url = f'{self.api_geo}/geo/district/'
         return await self._get_request('get_districts', url)
 
-    # -------------------------------------------------------------------------
-    # Геокодирование: поиск зданий, районов
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # УПРАВЛЯЮЩИЕ КОМПАНИИ
+    # =========================================================================
 
-    async def search_building(
+    async def get_management_company(self, building_id: str) -> dict[str, Any]:
+        """
+        🏢 Возвращает управляющую компанию по ID здания.
+
+        Endpoint: GET /api/v1/mancompany/{building_id}
+        """
+        url = f'{self.api_geo_v1}/mancompany/{building_id}'
+        params = {'region_of_search': self.region_id}
+        return await self._get_request('get_management_company', url, params)
+
+    # =========================================================================
+    # МФЦ
+    # =========================================================================
+
+    async def get_mfc_by_building(self, building_id: str) -> dict[str, Any]:
+        """
+        📋 Возвращает ближайший МФЦ по ID здания.
+
+        Endpoint: GET /mfc/
+        """
+        url = f'{self.api_site}/mfc/'
+        params = {'id_building': building_id}
+        return await self._get_request('get_mfc_by_building', url, params)
+
+    async def get_all_mfc(self) -> dict[str, Any]:
+        """
+        📋 Возвращает список всех МФЦ.
+
+        Endpoint: GET /mfc/all/
+        """
+        url = f'{self.api_site}/mfc/all/'
+        return await self._get_request('get_all_mfc', url)
+
+    async def get_mfc_by_district(self, district: str) -> dict[str, Any]:
+        """
+        📋 Находит и возвращает все МФЦ по району.
+
+        Endpoint: GET /mfc/district/
+        """
+        url = f'{self.api_site}/mfc/district/'
+        params = {'district': district}
+        return await self._get_request('get_mfc_by_district', url, params)
+
+    async def get_mfc_nearest_by_coords(
+        self,
+        lat: float,
+        lon: float,
+        distance_km: int = 5,  # TODO: использовать разумное значение по умолчанию
+    ) -> dict[str, Any]:
+        """
+        📋 Возвращает ближайший МФЦ по координатам.
+
+        Endpoint: GET /mfc/nearest/
+        """
+        url = f'{self.api_site}/mfc/nearest/'
+        params = {
+            'lat': lat,
+            'lon': lon,
+            'distance': distance_km,
+        }
+        return await self._get_request('get_mfc_nearest_by_coords', url, params)
+
+    # =========================================================================
+    # ПОЛИКЛИНИКИ
+    # =========================================================================
+
+    async def get_polyclinics_by_building(self, building_id: str) -> dict[str, Any]:
+        """
+        🏥 Возвращает ПРИКРЕПЛЁННЫЕ поликлиники по ID здания.
+
+        Endpoint: GET /polyclinics/
+        """
+        url = f'{self.api_site}/polyclinics/'
+        params = {'id': building_id}
+        return await self._get_request('get_polyclinics_by_building', url, params)
+
+    # =========================================================================
+    # ШКОЛЫ
+    # =========================================================================
+
+    async def get_linked_schools(
+        self,
+        building_id: str,
+        scheme: int = 1,
+    ) -> dict[str, Any]:
+        """
+        🏫 Возвращает ПРИКРЕПЛЁННЫЕ школы по прописке.
+
+        Endpoint: GET /school/linked/{building_id}
+        """
+        url = f'{self.api_site}/school/linked/{building_id}'
+        params = {'scheme': scheme}
+        return await self._get_request('get_linked_schools', url, params)
+
+    async def get_school_by_id(self, school_id: int) -> dict[str, Any]:
+        """
+        🏫 Возвращает школу по ID.
+
+        Endpoint: GET /school/id/
+        """
+        url = f'{self.api_site}/school/id/'
+        params = {'id': school_id}
+        return await self._get_request('get_school_by_id', url, params)
+
+    async def get_schools_map(
+        self,
+        district: str | None = None,
+        org_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        🏫 Возвращает карту школ.
+
+        Endpoint: GET /school/map/
+        """
+        url = f'{self.api_site}/school/map/'
+        params = {}
+        if district:
+            params['district'] = district
+        if org_type:
+            params['org_type'] = org_type
+        return await self._get_request('get_schools_map', url, params or None)
+
+    # =========================================================================
+    # ДЕТСКИЕ САДЫ
+    # =========================================================================
+
+    async def get_kindergartens(
+        self,
+        district: str,
+        age_year: int = 3,
+        age_month: int = 0,
+        count: int = 10,
+    ) -> dict[str, Any]:
+        """
+        👶 Возвращает детские сады.
+
+        Endpoint: GET /dou/
+        """
+        url = f'{self.api_site}/dou/'
+        params = {
+            'district': district,
+            'legal_form': 'Государственная',
+            'age_year': age_year,
+            'age_month': age_month,
+            'doo_status': 'Функционирует',
+            'count': count,
+            'page': 1,
+        }
+        return await self._get_request('get_kindergartens', url, params)
+
+    # LEGACY
+    # - TODO: удалить в будущем, когда будут готовы функции возвращающие Pydantic модели
+    async def search_building_legacy(
         self,
         query: str,
         count: int = 5,

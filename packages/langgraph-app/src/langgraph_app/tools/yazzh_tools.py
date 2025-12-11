@@ -143,7 +143,7 @@ def search_address_tool(query: str) -> str:
     async def _search():
         async with ApiClientUnified() as client:
             try:
-                buildings = await client.search_building(query, count=5)
+                buildings = await client.search_building_legacy(query, count=5)
                 return format_building_search_for_chat(buildings)
             except AddressNotFoundError:
                 return 'Адрес не найден. Пожалуйста, уточните запрос.'
