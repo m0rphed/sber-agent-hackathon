@@ -19,4 +19,4 @@ COPY libs ./libs
 RUN uv sync --frozen --package bot-telegram --no-dev
 
 # run bot
-CMD ["uv", "run", "--package", "bot-telegram", "python", "-m", "bot_telegram"]
+CMD ["uv", "run", "--package", "bot-telegram", "python", "-m", "bot_telegram.main"]

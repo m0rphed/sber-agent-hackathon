@@ -2,7 +2,7 @@
   "dependencies": ["."],
   
   "graphs": {
-    "hybrid": "./src/langgraph_app/graphs.py:hybrid"
+    "hybrid": "langgraph_app.graphs:hybrid"
   },
   
   "env": ".env",

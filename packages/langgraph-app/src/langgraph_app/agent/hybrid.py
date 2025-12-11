@@ -56,7 +56,7 @@ logger = get_logger(__name__)
 
 # System prompt для ReAct агента с детальными инструкциями по slot-filling
 # Загружаем из файла prompts/tool_agent_system.txt
-TOOL_AGENT_SYSTEM_PROMPT = load_prompt("tool_agent_system.txt")
+TOOL_AGENT_SYSTEM_PROMPT = load_prompt('tool_agent_system.txt')
 
 
 class HybridIntent(str, Enum):
@@ -68,10 +68,12 @@ class HybridIntent(str, Enum):
     RAG_SEARCH = 'rag_search'  # Поиск по госуслугам
     CONVERSATION = 'conversation'  # Обычный разговор
 
+
 class IntentLLMOutput(BaseModel):
     """
     Структура ответа от LLM-роутера
     """
+
     intent: Literal['tool_agent', 'rag_search', 'conversation']
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
@@ -181,6 +183,7 @@ def check_toxicity_node(state: HybridState) -> dict:
         'metadata': {**state.get('metadata', {}), 'toxicity_blocked': False},
     }
 
+
 def _classify_intent_with_llm(
     query: str,
     history: list[BaseMessage],
@@ -206,7 +209,7 @@ def _classify_intent_with_llm(
         from langgraph_app.agent.llm import get_llm_for_intent_routing
 
         # Загружаем prompt из файла
-        hybrid_intent_prompt = load_prompt("hybrid_intent_classifier.txt")
+        hybrid_intent_prompt = load_prompt('hybrid_intent_classifier.txt')
 
         llm = get_llm_for_intent_routing().with_structured_output(IntentLLMOutput)
         prompt = ChatPromptTemplate.from_messages(
@@ -233,12 +236,7 @@ def _classify_intent_with_llm(
         dialog_text = '\n'.join(dialog_lines) if dialog_lines else '(диалог пуст)'
 
         chain = prompt | llm
-        result: IntentLLMOutput = chain.invoke(
-            {
-                'dialog': dialog_text,
-                'last_message': query
-            }
-        )
+        result: IntentLLMOutput = chain.invoke({'dialog': dialog_text, 'last_message': query})
         return result
 
     except Exception as e:
@@ -288,6 +286,7 @@ def classify_intent_node(state: HybridState) -> dict:
             'intent_reason': reason,
         },
     }
+
 
 def tool_agent_node(state: HybridState) -> dict:
     """
@@ -420,9 +419,11 @@ def conversation_node(state: HybridState) -> dict:
     llm = get_llm_for_conversation()
 
     messages = [
-        HumanMessage(content="""[SYSTEM] Ты — дружелюбный городской помощник Санкт-Петербурга.
+        HumanMessage(
+            content="""[SYSTEM] Ты — дружелюбный городской помощник Санкт-Петербурга.
 Помогаешь жителям с информацией о госуслугах, МФЦ и городских сервисах.
-Отвечай кратко и вежливо.""")
+Отвечай кратко и вежливо."""
+        )
     ]
 
     # Добавляем историю
@@ -540,7 +541,9 @@ def create_hybrid_graph(checkpointer=None):
     builder.add_conditional_edges(
         'classify_intent',
         intent_router,
-        {'tool_agent': 'tool_agent', 'rag': 'rag_search', 'conversation': 'conversation'},
+        {'tool_agent': 'tool_agent',
+        #  'rag': 'rag_search',
+         'conversation': 'conversation'},
     )
 
     builder.add_edge('tool_agent', 'generate_response')
