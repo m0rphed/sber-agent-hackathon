@@ -225,11 +225,13 @@ $RECYCLE.BIN/
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 
 docs/
+other/
 app/knowledge_base_md/
 app/rag/life_situations_md/
 
 .langgraph_api/
-
+.streamlit/
+data/
 data/parsed_docs/
 data/chroma_db/
 data/index_metadata.json
