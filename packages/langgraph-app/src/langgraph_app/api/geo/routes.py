@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import networkx as nx
 import osmnx as ox
 
-from langgraph_app.api.geo.geocoding import geocode_with_cache, GeocodingError
+from langgraph_app.api.geo.geocoding import GeocodingError, geocode_with_cache
 from langgraph_app.config import get_geo_config
 from langgraph_app.osmnx_config import get_graphs
 
