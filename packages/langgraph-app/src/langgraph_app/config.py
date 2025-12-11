@@ -263,6 +263,11 @@ class GeoConfig:
     Базовое имя автомобильного графа (без расширения)
     """
 
+    spb_metro_data_path: str = 'spb_metro_data_address.json'
+    """
+    Путь к файлу со статическими данными метро Санкт-Петербурга
+    """
+
 
 @dataclass(frozen=True)
 class AgentConfig:
@@ -358,12 +363,13 @@ def get_geo_config() -> GeoConfig:
         graphs_subdir = os.getenv('GEO_GRAPHS_SUBDIR', 'graphs')
         geocode_db = os.getenv('GEO_GEOCODE_DB', 'geocode_cache.sqlite3')
         osmnx_cache = os.getenv('GEO_OSMNX_CACHE', 'osmnx_cache')
-
+        spb_metro_data_path = os.getenv('GEO_SPB_METRO_DATA_PATH', 'spb_metro_data_address.json')
         _geo_config = GeoConfig(
             city_name=city_name,
             graphs_subdir=graphs_subdir,
             geocode_db_name=geocode_db,
             osmnx_cache_subdir=osmnx_cache,
+            spb_metro_data_path=spb_metro_data_path,
         )
 
     return _geo_config
