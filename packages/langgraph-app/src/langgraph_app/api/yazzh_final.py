@@ -21,6 +21,7 @@ API_GEO = 'https://yazzh-geo.gate.petersburg.ru'
 API_SITE = 'https://yazzh.gate.petersburg.ru'
 REGION_ID = '78'
 
+
 ### LEGACY
 def format_building_search_for_chat(buildings: list[BuildingSearchResult]) -> str:
     """
@@ -205,9 +206,6 @@ class ApiClientUnified:
         url = f'{self.api_geo}/geo/district/'
         return await self._get_request('get_districts', url)
 
-
-
-
     # -------------------------------------------------------------------------
     # Геокодирование: поиск зданий, районов
     # -------------------------------------------------------------------------
@@ -231,17 +229,14 @@ class ApiClientUnified:
             AddressNotFoundError: Если ничего не найдено
         """
         async with ApiClientUnified() as client:
-            res = client.search_building_full_text_search(
-                query=query,
-                count=10
-            )
-        if res["status_code"] != 200:
+            res = await client.search_building_full_text_search(query=query, count=10)
+        if res['status_code'] != 200:
             raise YazzhAPIError(
                 f'Ошибка API при поиске адреса: {res["status_code"]}',
-                status_code=res["status_code"],
+                status_code=res['status_code'],
             )
 
-        data = res["json"]
+        data = res['json']
         buildings_data = (data['data'], data)
 
         if not buildings_data:
