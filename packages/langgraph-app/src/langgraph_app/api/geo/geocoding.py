@@ -1,10 +1,10 @@
 """
 Модуль геокодинга - должен в себе объединять все доступные способы геокодинга:
 
-# 1. Геокодинг названий станций МЕТРО по статическим данным
-# 2. Геокодинг адресов в координаты через Yandex Geocoding API
-# 3. Обратный геокодинг координат в адреса через Yandex Geocoding API
-# 4. Геокодинг через Nominatim (OpenStreetMap) - для резервного варианта
+1. Геокодинг названий станций МЕТРО по статическим данным
+2. Геокодинг адресов в координаты через Yandex Geocoding API
+3. Обратный геокодинг координат в адреса через Yandex Geocoding API
+4. Геокодинг через Nominatim (OpenStreetMap) - для резервного варианта
 """
 
 import json
@@ -19,8 +19,8 @@ from langgraph_app.osmnx_config import get_osm_geocode_db
 
 load_dotenv()
 
-YANDEX_API_KEY = os.getenv('YANDEX_API_KEY')
-_yandex_geocode_client = GeocodeAsync(YANDEX_API_KEY)
+_YANDEX_API_KEY = os.getenv('YANDEX_API_KEY')
+_yandex_geocode_client = GeocodeAsync(_YANDEX_API_KEY)
 
 
 async def _read_json_metro_all_stations():
@@ -60,6 +60,7 @@ async def address_to_coords_yandex(user_address: str) -> tuple[float, float] | N
         'спб' not in lower_user_address
         and 'санкт-петербург' not in lower_user_address
         and 'санкт петербург' not in lower_user_address
+        and 'петербург' not in lower_user_address
     ):
         user_address = 'Санкт-Петербург, ' + user_address
 
@@ -89,7 +90,7 @@ async def coords_to_address_yandex(lat: float, lon: float):
     Возвращает строку-адрес или None, если ничего не найдено.
     """
 
-    # Яндекс ждёт [lon, lat], то есть [долгота, широта]
+    # яндекс ждёт [lon, lat], то есть [долгота, широта]
     coords = [lon, lat]
 
     data = await _yandex_geocode_client.reverse(
@@ -107,7 +108,7 @@ async def coords_to_address_yandex(lat: float, lon: float):
     geo_obj = members[0]['GeoObject']
     meta = geo_obj.get('metaDataProperty', {}).get('GeocoderMetaData', {})
 
-    # Основной адрес
+    # основной адрес
     text = meta.get('text')
     if text:
         return text

@@ -38,7 +38,7 @@ def _get_route_length_m(G: nx.MultiDiGraph, route: list[int]) -> float:
 def _get_route_coords(G: nx.MultiDiGraph, route: Iterable[int]) -> list[tuple[float, float]]:
     """
     Возвращает список (lat, lon) по списку вершин маршрута.
-    Для непрожектированного графа:
+    Для неспроецированного графа:
         node['y'] = lat, node['x'] = lon.
     """
     coords: list[tuple[float, float]] = []

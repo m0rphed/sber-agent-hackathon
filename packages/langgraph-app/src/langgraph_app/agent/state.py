@@ -40,20 +40,20 @@ class AgentState(MessagesState):
     Добавляет общие поля для наших агентов.
     """
 
-    # === Toxicity ===
-    is_toxic: bool  # True если запрос токсичный
-    toxicity_response: str | None  # Ответ для токсичного запроса
+    # toxicity
+    is_toxic: bool                  # True если запрос токсичный
+    toxicity_response: str | None   # Ответ для токсичного запроса
 
-    # === Intent ===
-    intent: str  # Классифицированное намерение
-    intent_confidence: float  # Уверенность классификации
+    # intent
+    intent: str                     # Классифицированное намерение
+    intent_confidence: float        # Уверенность классификации
 
-    # === Results ===
-    tool_result: str | None  # Результат вызова tool/RAG
-    final_response: str | None  # Финальный ответ
+    # results
+    tool_result: str | None         # Результат вызова tool/RAG
+    final_response: str | None      # Финальный ответ
 
-    # === Metadata ===
-    metadata: dict[str, Any]  # Статистика, логирование
+    # metadata
+    metadata: dict[str, Any]        # Статистика, логирование
 
 
 # =============================================================================
@@ -78,17 +78,17 @@ def get_last_user_message(state: AgentState) -> str:
     """
     messages = state.get('messages', [])
 
-    # Ищем последнее HumanMessage
+    # ищем последнее HumanMessage
     for msg in reversed(messages):
-        # Формат 1: LangChain HumanMessage объект
+        # формат 1: LangChain HumanMessage объект
         if isinstance(msg, HumanMessage):
             content = msg.content
             return _extract_text_from_content(content)
 
-        # Формат 2: Dict от LangGraph SDK ({"type": "human", "content": "..."})
+        # формат 2: Dict от LangGraph SDK ({"type": "human", "content": "..."})
         if isinstance(msg, dict):
             msg_type = msg.get('type', '')
-            # Проверяем разные варианты типа user-сообщения
+            # проверяем разные варианты типа user-сообщения
             if msg_type in ('human', 'user') or msg.get('role') == 'user':
                 content = msg.get('content', '')
                 return _extract_text_from_content(content)
@@ -152,7 +152,7 @@ def get_chat_history(state: AgentState, max_messages: int | None = None) -> list
     if not messages:
         return []
 
-    # Все кроме последнего
+    # все кроме последнего
     history = messages[:-1] if messages else []
 
     if max_messages is not None:
@@ -171,7 +171,7 @@ def create_ai_response(content: str) -> dict:
     Returns:
         Dict для обновления state
     """
-    # Защита от None
+    # защита от None
     if content is None:
         content = ''
 
