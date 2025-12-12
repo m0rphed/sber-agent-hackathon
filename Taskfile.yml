@@ -1,0 +1,183 @@
+# ══════════════════════════════════════════════════════════════
+# Taskfile.yml - Команды для проекта
+# Установка: https://taskfile.dev
+# Windows: scoop install task / choco install go-task / winget install Task.Task
+# ══════════════════════════════════════════════════════════════
+version: '3'
+
+vars:
+  PROJECT_ROOT: "{{.ROOT_DIR}}"
+  LANGGRAPH_DIR: "packages/langgraph-app"
+  
+silent: false
+
+tasks:
+
+  # ══════════════════════════════════════════════════════════════
+  # AGENT TESTING (используют скрипты из scripts/)
+  # ══════════════════════════════════════════════════════════════
+
+  agent:check:
+    desc: "Проверить что агент импортируется и все компоненты работают"
+    dir: "{{.LANGGRAPH_DIR}}"
+    cmds:
+      - uv run python scripts/agent_check.py
+
+  agent:invoke:
+    desc: "Тест агента с запросом (task agent:invoke -- найди МФЦ)"
+    dir: "{{.LANGGRAPH_DIR}}"
+    cmds:
+      - uv run python scripts/agent_invoke.py {{.CLI_ARGS}}
+
+  agent:stream:
+    desc: "Тест агента со стримингом (task agent:stream -- найди школу)"
+    dir: "{{.LANGGRAPH_DIR}}"
+    cmds:
+      - uv run python scripts/agent_stream.py {{.CLI_ARGS}}
+
+  agent:categories:
+    desc: "Тест классификации категорий на примерах"
+    dir: "{{.LANGGRAPH_DIR}}"
+    cmds:
+      - uv run python scripts/agent_categories.py
+
+  agent:tools:
+    desc: "Показать tools для категории (task agent:tools -- pets)"
+    dir: "{{.LANGGRAPH_DIR}}"
+    cmds:
+      - uv run python scripts/agent_tools.py {{.CLI_ARGS}}
+
+  # ══════════════════════════════════════════════════════════════
+  # LANGGRAPH
+  # ══════════════════════════════════════════════════════════════
+  
+  langgraph:dev:
+    desc: "Запустить LangGraph Studio в dev режиме"
+    dir: "{{.LANGGRAPH_DIR}}"
+    cmds:
+      - uv run langgraph dev --config langgraph.json
+
+  langgraph:up:
+    desc: "Запустить LangGraph Server"
+    dir: "{{.LANGGRAPH_DIR}}"
+    cmds:
+      - uv run langgraph up --config langgraph.json
+
+  # ══════════════════════════════════════════════════════════════
+  # UI
+  # ══════════════════════════════════════════════════════════════
+
+  streamlit:
+    desc: "Запустить Streamlit UI"
+    dir: packages/streamlit-ui
+    cmds:
+      - uv run streamlit run src/streamlit_ui/app.py
+
+  # ══════════════════════════════════════════════════════════════
+  # BOTS
+  # ══════════════════════════════════════════════════════════════
+
+  bot:telegram:
+    desc: "Запустить Telegram бота"
+    dir: packages/bot-telegram
+    cmds:
+      - uv run python -m bot_telegram
+
+  bot:max:
+    desc: "Запустить MAX бота"
+    dir: packages/bot-max
+    cmds:
+      - uv run python -m bot_max
+
+  # ══════════════════════════════════════════════════════════════
+  # DEVELOPMENT
+  # ══════════════════════════════════════════════════════════════
+
+  lint:
+    desc: "Проверить код с ruff"
+    cmds:
+      - uv run ruff check .
+
+  lint:fix:
+    desc: "Исправить ошибки ruff автоматически"
+    cmds:
+      - uv run ruff check . --fix
+
+  format:
+    desc: "Форматировать код с ruff"
+    cmds:
+      - uv run ruff format .
+
+  typecheck:
+    desc: "Проверка типов (pyright)"
+    cmds:
+      - uv run pyright
+
+  # ══════════════════════════════════════════════════════════════
+  # DEPENDENCIES
+  # ══════════════════════════════════════════════════════════════
+
+  sync:
+    desc: "Синхронизировать все зависимости"
+    cmds:
+      - uv sync --all-packages
+
+  lock:
+    desc: "Обновить lock файл"
+    cmds:
+      - uv lock
+
+  add:
+    desc: "Добавить зависимость (task add -- package-name)"
+    cmds:
+      - uv add {{.CLI_ARGS}}
+
+  # ══════════════════════════════════════════════════════════════
+  # DOCKER
+  # ══════════════════════════════════════════════════════════════
+
+  docker:build:
+    desc: "Собрать Docker образы"
+    cmds:
+      - docker compose build
+
+  docker:up:
+    desc: "Запустить все сервисы в Docker"
+    cmds:
+      - docker compose up -d
+
+  docker:down:
+    desc: "Остановить Docker сервисы"
+    cmds:
+      - docker compose down
+
+  docker:logs:
+    desc: "Показать логи Docker"
+    cmds:
+      - docker compose logs -f
+
+  # ══════════════════════════════════════════════════════════════
+  # UTILITIES
+  # ══════════════════════════════════════════════════════════════
+
+  clean:
+    desc: "Очистить кэш и временные файлы"
+    cmds:
+      - cmd: Remove-Item -Recurse -Force .pytest_cache, .ruff_cache, __pycache__, .mypy_cache, data/memory.db -ErrorAction SilentlyContinue
+        platforms: [windows]
+      - cmd: rm -rf .pytest_cache .ruff_cache __pycache__ .mypy_cache data/memory.db
+        platforms: [linux, darwin]
+
+  help:
+    desc: "Показать все доступные команды"
+    cmds:
+      - task --list
+
+  # ══════════════════════════════════════════════════════════════
+  # DEFAULT
+  # ══════════════════════════════════════════════════════════════
+
+  default:
+    desc: "Показать справку"
+    cmds:
+      - task help
