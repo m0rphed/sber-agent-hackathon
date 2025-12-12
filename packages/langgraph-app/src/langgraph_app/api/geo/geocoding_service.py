@@ -193,7 +193,7 @@ def is_explicit_metro_query(text: str) -> bool:
     t = text.lower()
     return any(
         kw in t
-        for kw in ('метро', 'м.', 'станция')
+        for kw in ('метро', 'м.', 'станция', 'м ')
     )
 
 
@@ -217,8 +217,6 @@ def extract_metro_station(address: str) -> str | None:
 
     # 3️⃣ омонимы → не решаем здесь
     return None
-
-
 
 
 def geocode_metro_candidates(query: str) -> list['GeocodingResult']:
@@ -384,7 +382,7 @@ async def geocode_address(
     # 3️⃣ Yandex
     result = await geocode_with_yandex(address)
     if result:
-        logger.info('geocoded_via_yandex', address=address)
+        logger.info('geocode_via_yandex', address=address)
         return result
 
     # 4️⃣ если адрес не найден — пробуем метро как fallback
@@ -400,7 +398,6 @@ async def geocode_address(
         return result
 
     return None
-
 
 
 async def geocode_address_with_candidates(
