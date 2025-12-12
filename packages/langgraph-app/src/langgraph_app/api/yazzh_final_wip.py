@@ -9,8 +9,6 @@ from rich.panel import Panel
 from rich.table import Table
 
 from langgraph_app.api.utils import _log_error, _log_json
-
-# LEGACY
 from langgraph_app.api.yazzh_models import AddressNotFoundError, BuildingSearchResult, YazzhAPIError
 
 console = Console()
@@ -20,7 +18,6 @@ API_SITE = 'https://yazzh.gate.petersburg.ru'
 REGION_ID = '78'
 
 
-# LEGACY
 def format_building_search_for_chat(buildings: list[BuildingSearchResult]) -> str:
     """
     Форматировать результаты поиска адресов для уточнения
@@ -40,12 +37,6 @@ def format_building_search_for_chat(buildings: list[BuildingSearchResult]) -> st
 class ApiClientUnified:
     """
     Клиент "Я здесь живу" API с опциональным логированием JSON ответов.
-
-    Каждый метод выводит:
-    - URL запроса
-    - Параметры запроса
-    - Полный JSON ответа (все поля)
-    - Status code
     """
 
     def __init__(
@@ -94,14 +85,10 @@ class ApiClientUnified:
         headers: dict | None = None,
     ) -> dict[str, Any]:
         """
-        Выполняет HTTP запрос с полным логированием.
-
-        Returns:
-            dict с ключами: status_code, json, raw_text, url
+        Выполняет HTTP GET запрос с логированием.
         """
         if self.verbose:
             console.rule(f'[bold cyan]📡 {method_name}[/bold cyan]')
-
             table = Table(title='Request', show_header=False, box=None)
             table.add_row('[dim]URL:[/dim]', url)
             if params:
@@ -206,14 +193,13 @@ class ApiClientUnified:
     ) -> tuple[float | None, float | None]:
         """
         Универсальное разрешение координат:
-        - если lat & lon заданы, возвращает их как есть;
-        - иначе пытается получить координаты по building_id;
-        - иначе по address_query через полнотекстовый поиск.
+        - если lat & lon заданы, вернуть их;
+        - иначе попытаться получить координаты по building_id;
+        - иначе по address_query (полнотекстовый поиск).
         """
         if lat is not None and lon is not None:
             return lat, lon
 
-        # 1) по building_id
         if building_id:
             res = await self.get_building_info(building_id)
             if res.get('status_code') == 200 and res.get('json') is not None:
@@ -221,7 +207,6 @@ class ApiClientUnified:
                 if coords is not None:
                     return coords
 
-        # 2) по адресу (полнотекстовый поиск)
         if address_query:
             res = await self.search_building_full_text_search(query=address_query, count=1)
             if res.get('status_code') == 200 and res.get('json') is not None:
@@ -231,8 +216,27 @@ class ApiClientUnified:
 
         return lat, lon
 
+    def _drop_district_if_coords(
+        self,
+        params: dict[str, Any],
+        lat: float | None,
+        lon: float | None,
+        district_keys: tuple[str, ...] = ('district',),
+    ) -> None:
+        """
+        Если координаты заданы, выкидываем из params поля района.
+
+        Используется для API, где либо район, либо координаты.
+        """
+        if lat is None and lon is None:
+            return
+
+        for key in district_keys:
+            if key in params:
+                params.pop(key, None)
+
     # ----------------------------------------
-    # ГЕОКОДИНГ - Фундаментальные функции     |
+    # ГЕОКОДИНГ
     # ----------------------------------------
 
     async def search_building_full_text_search(
@@ -259,7 +263,7 @@ class ApiClientUnified:
         output_format: str = 'extended',
     ) -> dict[str, Any]:
         """
-        🏠 Возвращает информацию о здании по ID.
+        🏠 Информация о здании по ID.
 
         Endpoint: GET /geo/buildings/{building_id}
         """
@@ -269,7 +273,7 @@ class ApiClientUnified:
 
     async def get_districts(self) -> dict[str, Any]:
         """
-        📍 Возвращает список всех районов СПб.
+        📍 Список районов СПб.
 
         Endpoint: GET /geo/district/
         """
@@ -282,7 +286,7 @@ class ApiClientUnified:
 
     async def get_management_company(self, building_id: str) -> dict[str, Any]:
         """
-        🏢 Возвращает управляющую компанию по ID здания.
+        🏢 УК по ID здания.
 
         Endpoint: GET /api/v1/mancompany/{building_id}
         """
@@ -297,7 +301,7 @@ class ApiClientUnified:
         company_inn: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏢 Информация об управляющей компании по ID / названию / ИНН.
+        🏢 Информация об УК по ID / названию / ИНН.
 
         Endpoint: GET /api/v1/mancompany/company/
         """
@@ -317,7 +321,7 @@ class ApiClientUnified:
 
     async def get_mfc_by_building(self, building_id: str) -> dict[str, Any]:
         """
-        📋 Возвращает ближайший МФЦ по ID здания.
+        📋 Ближайший МФЦ по ID здания.
 
         Endpoint: GET /mfc/
         """
@@ -327,7 +331,7 @@ class ApiClientUnified:
 
     async def get_all_mfc(self) -> dict[str, Any]:
         """
-        📋 Возвращает список всех МФЦ.
+        📋 Все МФЦ.
 
         Endpoint: GET /mfc/all/
         """
@@ -336,7 +340,7 @@ class ApiClientUnified:
 
     async def get_mfc_by_district(self, district: str) -> dict[str, Any]:
         """
-        📋 Находит и возвращает все МФЦ по району.
+        📋 МФЦ по району.
 
         Endpoint: GET /mfc/district/
         """
@@ -351,7 +355,7 @@ class ApiClientUnified:
         distance_km: int = 5,
     ) -> dict[str, Any]:
         """
-        📋 Возвращает ближайший МФЦ по координатам.
+        📋 Ближайший МФЦ по координатам.
 
         Endpoint: GET /mfc/nearest/
         """
@@ -400,13 +404,12 @@ class ApiClientUnified:
         distance_km: int = 5,
     ) -> dict[str, Any]:
         """
-        📋 Возвращает ближайший МФЦ по адресу (building_id).
+        📋 Ближайший МФЦ по адресу (building_id).
 
-        Реализация: координаты по зданию -> get_mfc_nearest_by_coords.
+        Координаты получаем по зданию.
         """
         lat, lon = await self._resolve_coords(building_id=building_id)
         if lat is None or lon is None:
-            # если координаты не удалось определить, возвращаем просто МФЦ по building_id
             return await self.get_mfc_by_building(building_id)
         return await self.get_mfc_nearest_by_coords(lat=lat, lon=lon, distance_km=distance_km)
 
@@ -416,7 +419,7 @@ class ApiClientUnified:
 
     async def get_polyclinics_by_building(self, building_id: str) -> dict[str, Any]:
         """
-        🏥 Возвращает ПРИКРЕПЛЁННЫЕ поликлиники по ID здания.
+        🏥 Прикреплённые поликлиники по ID здания.
 
         Endpoint: GET /polyclinics/
         """
@@ -434,7 +437,7 @@ class ApiClientUnified:
         scheme: int = 1,
     ) -> dict[str, Any]:
         """
-        🏫 Возвращает ПРИКРЕПЛЁННЫЕ школы по прописке.
+        🏫 Прикреплённые школы по прописке.
 
         Endpoint: GET /school/linked/{building_id}
         """
@@ -448,7 +451,7 @@ class ApiClientUnified:
         scheme: int | None = None,
     ) -> dict[str, Any]:
         """
-        🏫 Возвращает школу по ID.
+        🏫 Школа по ID.
 
         Endpoint: GET /school/{school_id}
         """
@@ -468,7 +471,7 @@ class ApiClientUnified:
         scheme: int | None = None,
     ) -> dict[str, Any]:
         """
-        🏫 Возвращает карту школ.
+        🏫 Карта школ.
 
         Endpoint: GET /school/map/
         """
@@ -512,7 +515,7 @@ class ApiClientUnified:
         scheme: int | None = None,
     ) -> dict[str, Any]:
         """
-        🏫 Статистика школ по районам.
+        🏫 Статистика по школам.
 
         Endpoint: GET /school/stat/
         """
@@ -526,7 +529,7 @@ class ApiClientUnified:
 
     async def get_school_commissions(self, district: str) -> dict[str, Any]:
         """
-        🏫 Информация о школьных комиссиях по району.
+        🏫 Школьные комиссии по району.
 
         Endpoint: GET /school/commissions/
         """
@@ -536,7 +539,7 @@ class ApiClientUnified:
 
     async def get_school_subjects(self) -> dict[str, Any]:
         """
-        🏫 Предметы (для профилей / карт).
+        🏫 Предметы.
 
         Endpoint: GET /school/subject/
         """
@@ -557,7 +560,7 @@ class ApiClientUnified:
         district: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏫 Наличие свободных мест в школах по району.
+        🏫 Наличие свободных мест по району.
 
         Endpoint: GET /school/available-spots/district/
         """
@@ -588,7 +591,7 @@ class ApiClientUnified:
         count: int = 10,
     ) -> dict[str, Any]:
         """
-        👶 Возвращает детские сады.
+        👶 Детские сады.
 
         Endpoint: GET /dou/
         """
@@ -642,7 +645,7 @@ class ApiClientUnified:
         return await self._get_request('get_disconnections', url, params)
 
     # =========================================================================
-    # СПОРТ
+    # СПОРТ (список)
     # =========================================================================
 
     async def get_sport_events(
@@ -654,7 +657,7 @@ class ApiClientUnified:
         count: int = 10,
     ) -> dict[str, Any]:
         """
-        🏅 Получить спортивные мероприятия.
+        🏅 Спортивные мероприятия.
 
         Endpoint: GET /sport-events/
         """
@@ -686,7 +689,7 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏟️ Получить спортивные площадки (список).
+        🏟️ Спортплощадки (список).
 
         Endpoint: GET /sportgrounds/
         """
@@ -696,12 +699,15 @@ class ApiClientUnified:
             params['district'] = district
         if types:
             if isinstance(types, list):
-                # TODO: множественный выбор видов спорта (через запятую)
+                # TODO: множественный выбор типов (через запятую)
                 params['types'] = ','.join(types)
             else:
                 params['types'] = types
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -709,11 +715,13 @@ class ApiClientUnified:
         if radius_km is not None:
             params['location_radius'] = radius_km
 
+        self._drop_district_if_coords(params, lat, lon, district_keys=('district',))
+
         return await self._get_request('get_sportgrounds', url, params)
 
     async def get_sportgrounds_count(self) -> dict[str, Any]:
         """
-        🏟️ Статистика спортивных площадок.
+        🏟️ Общая статистика спортплощадок.
 
         Endpoint: GET /sportgrounds/count/
         """
@@ -732,7 +740,6 @@ class ApiClientUnified:
         separation: bool | None = None,
         free: bool | None = None,
         kids: bool | None = None,
-        district: str | None = None,
         lat: float | None = None,
         lon: float | None = None,
         radius_km: int | None = None,
@@ -743,7 +750,7 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🎭 Получить мероприятия (афиша).
+        🎭 Мероприятия (афиша).
 
         Endpoint: GET /afisha/all/
         """
@@ -766,18 +773,21 @@ class ApiClientUnified:
             params['free'] = str(free).lower()
         if kids is not None:
             params['kids'] = str(kids).lower()
-        if district:
-            params['district'] = district
         if service:
             params['service'] = service
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
             params['location_longitude'] = lon
         if radius_km is not None:
             params['location_radius'] = radius_km
+
+        self._drop_district_if_coords(params, lat, lon, district_keys=('district',))
 
         return await self._get_request('get_events', url, params)
 
@@ -834,10 +844,7 @@ class ApiClientUnified:
         Endpoint: GET /pensioner/services/
         """
         url = f'{self.api_site}/pensioner/services/'
-        params: dict[str, Any] = {
-            'count': count,
-            'page': page,
-        }
+        params: dict[str, Any] = {'count': count, 'page': page}
         if location_title:
             params['location_title'] = location_title
         if category:
@@ -851,13 +858,18 @@ class ApiClientUnified:
         if egs is not None:
             params['egs'] = str(egs).lower()
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
             params['location_longitude'] = lon
         if radius_km is not None:
             params['location_radius'] = radius_km
+
+        self._drop_district_if_coords(params, lat, lon, district_keys=('district',))
 
         return await self._get_request('get_pensioner_services', url, params)
 
@@ -881,7 +893,10 @@ class ApiClientUnified:
         url = f'{self.api_site}/mypets/all-category/'
         params: dict[str, Any] = {'type': 'Ветклиника'}
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None and lon is not None:
             params['location_latitude'] = lat
             params['location_longitude'] = lon
@@ -905,7 +920,10 @@ class ApiClientUnified:
         url = f'{self.api_site}/mypets/all-category/'
         params: dict[str, Any] = {'type': 'Парк'}
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None and lon is not None:
             params['location_latitude'] = lat
             params['location_longitude'] = lon
@@ -951,7 +969,10 @@ class ApiClientUnified:
         if keywords:
             params['keywords'] = keywords
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -959,12 +980,12 @@ class ApiClientUnified:
         if radius_km is not None:
             params['location_radius'] = radius_km
 
+        # Документация: либо район, либо координаты
+        self._drop_district_if_coords(params, lat, lon, district_keys=('district',))
+
         return await self._get_request('get_beautiful_places', url, params)
 
-    async def get_beautiful_place_by_id(
-        self,
-        ids: int,
-    ) -> dict[str, Any]:
+    async def get_beautiful_place_by_id(self, ids: int) -> dict[str, Any]:
         """
         🏛️ Красивые места по ID.
 
@@ -976,7 +997,7 @@ class ApiClientUnified:
 
     async def get_beautiful_places_area(self) -> dict[str, Any]:
         """
-        🏛️ Области интересных мест (СПб, ЛО и т.д.)
+        🏛️ Области интересных мест.
 
         Endpoint: GET /beautiful_places/area/
         """
@@ -988,7 +1009,7 @@ class ApiClientUnified:
         area: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏛️ Районы по выбранной области.
+        🏛️ Районы по области.
 
         Endpoint: GET /beautiful_places/area/district/
         """
@@ -1077,7 +1098,10 @@ class ApiClientUnified:
         if expanded is not None:
             params['expanded'] = str(expanded).lower()
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1087,12 +1111,9 @@ class ApiClientUnified:
 
         return await self._get_request('get_beautiful_place_routes', url, params)
 
-    async def get_beautiful_place_routes_by_id(
-        self,
-        ids: int,
-    ) -> dict[str, Any]:
+    async def get_beautiful_place_routes_by_id(self, ids: int) -> dict[str, Any]:
         """
-        🚶 Турмаршруты по ID.
+        🚶 Турмаршрут по ID.
 
         Endpoint: GET /beautiful_places/routes/id/
         """
@@ -1102,7 +1123,7 @@ class ApiClientUnified:
 
     async def get_beautiful_place_routes_themes(self) -> dict[str, Any]:
         """
-        🚶 Темы туристических маршрутов.
+        🚶 Темы маршрутов.
 
         Endpoint: GET /beautiful_places/routes/theme/
         """
@@ -1111,7 +1132,7 @@ class ApiClientUnified:
 
     async def get_beautiful_place_routes_types(self) -> dict[str, Any]:
         """
-        🚶 Типы туристических маршрутов.
+        🚶 Типы маршрутов.
 
         Endpoint: GET /beautiful_places/routes/type/
         """
@@ -1151,7 +1172,7 @@ class ApiClientUnified:
         page: int = 1,
     ) -> dict[str, Any]:
         """
-        📰 Получить новости.
+        📰 Новости.
 
         Endpoint: GET /news/
         """
@@ -1188,9 +1209,7 @@ class ApiClientUnified:
 
     async def get_memorable_dates_by_ids(self, ids: int) -> dict[str, Any]:
         """
-        📅 Памятные даты по ID.
-
-        Здесь по условию — только одно число (int).
+        📅 Памятные даты по ID (одно число).
 
         Endpoint: GET /memorable_dates/ids/
         """
@@ -1209,7 +1228,7 @@ class ApiClientUnified:
         return await self._get_request('get_memorable_dates_by_day', url, params)
 
     # =========================================================================
-    # ПИТОМЦЫ (MyPets) - расширенные
+    # ПИТОМЦЫ (расширенные MyPets)
     # =========================================================================
 
     async def get_mypets_all_category(
@@ -1222,17 +1241,20 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🐕 Все категории объектов для питомцев (Мой питомец).
+        🐕 Все категории объектов для питомцев.
 
         Endpoint: GET /mypets/all-category/
         """
         url = f'{self.api_site}/mypets/all-category/'
         params: dict[str, Any] = {}
         if types:
-            # TODO: множественный выбор типов объектов (как массив строк)
+            # TODO: множественный выбор типов (массив строк)
             params['type'] = types
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1248,7 +1270,7 @@ class ApiClientUnified:
         breed: str | None = None,
     ) -> dict[str, Any]:
         """
-        🐕 Породы животных (Мой питомец).
+        🐕 Породы животных.
 
         Endpoint: GET /mypets/animal-breeds/
         """
@@ -1262,7 +1284,7 @@ class ApiClientUnified:
 
     async def get_mypets_holidays(self) -> dict[str, Any]:
         """
-        🐕 Праздники для питомцев (Мой питомец).
+        🐕 Праздники для питомцев.
 
         Endpoint: GET /mypets/holidays/
         """
@@ -1276,7 +1298,7 @@ class ApiClientUnified:
         size: int = 10,
     ) -> dict[str, Any]:
         """
-        🐕 Посты про питомцев (Мой питомец).
+        🐕 Посты про питомцев.
 
         Endpoint: GET /mypets/posts/
         """
@@ -1288,7 +1310,7 @@ class ApiClientUnified:
 
     async def get_mypets_posts_id(self, posts_id: int) -> dict[str, Any]:
         """
-        🐕 Пост по ID (Мой питомец).
+        🐕 Пост по ID.
 
         Endpoint: GET /mypets/posts/id/
         """
@@ -1303,7 +1325,7 @@ class ApiClientUnified:
         size: int = 10,
     ) -> dict[str, Any]:
         """
-        🐕 Рекомендации и советы (Мой питомец).
+        🐕 Рекомендации и советы.
 
         Endpoint: GET /mypets/recommendations/
         """
@@ -1323,14 +1345,17 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🐕 Ветеринарные клиники по координатам (Мой питомец).
+        🐕 Ветклиники по координатам.
 
         Endpoint: GET /mypets/clinics/
         """
         url = f'{self.api_site}/mypets/clinics/'
         params: dict[str, Any] = {}
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1338,14 +1363,14 @@ class ApiClientUnified:
         if radius_km:
             params['location_radius'] = radius_km
         if services:
-            # TODO: множественный выбор услуг (как массив строк)
+            # TODO: множественный выбор услуг (массив строк)
             params['services'] = services
 
         return await self._get_request('get_mypets_clinics', url, params or None)
 
     async def get_mypets_clinics_id(self, clinic_id: int) -> dict[str, Any]:
         """
-        🐕 Ветеринарная клиника по ID (Мой питомец).
+        🐕 Ветклиника по ID.
 
         Endpoint: GET /mypets/clinics/id/
         """
@@ -1363,7 +1388,7 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🐕 Парки и площадки для питомцев (Мой питомец).
+        🐕 Парки и площадки для питомцев.
 
         Endpoint: GET /mypets/parks-playground/
         """
@@ -1372,7 +1397,10 @@ class ApiClientUnified:
         if place_type:
             params['type'] = place_type
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1384,7 +1412,7 @@ class ApiClientUnified:
 
     async def get_mypets_parks_playground_id(self, park_id: int) -> dict[str, Any]:
         """
-        🐕 Парк/площадка по ID (Мой питомец).
+        🐕 Парк/площадка по ID.
 
         Endpoint: GET /mypets/parks-playground/id/
         """
@@ -1402,14 +1430,17 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🐕 Приюты для животных (Мой питомец).
+        🐕 Приюты для животных.
 
         Endpoint: GET /mypets/shelters/
         """
         url = f'{self.api_site}/mypets/shelters/'
         params: dict[str, Any] = {}
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1417,7 +1448,7 @@ class ApiClientUnified:
         if radius_km is not None:
             params['location_radius'] = radius_km
         if specialization:
-            # TODO: множественный выбор специализаций (как массив строк)
+            # TODO: множественный выбор специализаций (массив строк)
             params['specialization'] = specialization
 
         return await self._get_request('get_mypets_shelters', url, params or None)
@@ -1433,7 +1464,7 @@ class ApiClientUnified:
         return await self._get_request('get_mypets_shelters_id', url, params)
 
     # =========================================================================
-    # СПОРТ - расширенные
+    # СПОРТ (расширенные)
     # =========================================================================
 
     async def get_sport_event_by_id(self, sport_event_id: int) -> dict[str, Any]:
@@ -1452,7 +1483,7 @@ class ApiClientUnified:
         service: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏅 Категории спортивных событий по району.
+        🏅 Категории спортсобытий по району.
 
         Endpoint: GET /sport-events/categoria/
         """
@@ -1475,7 +1506,7 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏅 Карта спортивных событий.
+        🏅 Карта спортсобытий.
 
         Endpoint: GET /sport-events/map
         """
@@ -1494,7 +1525,10 @@ class ApiClientUnified:
         if end_date:
             params['end_date'] = end_date
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1502,10 +1536,12 @@ class ApiClientUnified:
         if radius_km is not None:
             params['location_radius'] = radius_km
 
+        self._drop_district_if_coords(params, lat, lon, district_keys=('district',))
+
         return await self._get_request('get_sport_events_map', url, params or None)
 
     # =========================================================================
-    # СПОРТПЛОЩАДКИ - расширенные
+    # СПОРТПЛОЩАДКИ (расширенные)
     # =========================================================================
 
     async def get_sportgrounds_by_id(self, sportgrounds_id: int) -> dict[str, Any]:
@@ -1535,7 +1571,7 @@ class ApiClientUnified:
 
     async def get_sportgrounds_types(self) -> dict[str, Any]:
         """
-        🏟️ Типы спортивных площадок.
+        🏟️ Типы спортплощадок.
 
         Endpoint: GET /sportgrounds/types/
         """
@@ -1558,7 +1594,7 @@ class ApiClientUnified:
         address_query: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏟️ Карта спортивных площадок.
+        🏟️ Карта спортплощадок.
 
         Endpoint: GET /sportgrounds/map/
         """
@@ -1566,7 +1602,7 @@ class ApiClientUnified:
         params: dict[str, Any] = {}
         if types:
             if isinstance(types, list):
-                # TODO: множественный выбор видов спорта (через запятую)
+                # TODO: множественный выбор типов (через запятую)
                 params['types'] = ','.join(types)
             else:
                 params['types'] = types
@@ -1583,7 +1619,10 @@ class ApiClientUnified:
         if zone:
             params['zone'] = zone
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1591,15 +1630,17 @@ class ApiClientUnified:
         if radius_km is not None:
             params['location_radius'] = radius_km
 
+        self._drop_district_if_coords(params, lat, lon, district_keys=('district',))
+
         return await self._get_request('get_sportgrounds_map', url, params or None)
 
     # =========================================================================
-    # ГЕО - расширенные
+    # ГЕО - ДОПОЛНИТЕЛЬНО
     # =========================================================================
 
     async def get_municipality(self) -> dict[str, Any]:
         """
-        📍 Муниципалитеты (районные администрации).
+        📍 Муниципалитеты.
 
         Endpoint: GET /geo/municipality/
         """
@@ -1607,7 +1648,7 @@ class ApiClientUnified:
         return await self._get_request('get_municipality', url)
 
     # =========================================================================
-    # ГАТИ (дорожные работы) - расширенные
+    # ГАТИ
     # =========================================================================
 
     async def get_gati_orders_map(
@@ -1645,7 +1686,7 @@ class ApiClientUnified:
 
     async def get_gati_work_types(self) -> dict[str, Any]:
         """
-        🚧 Типы работ ГАТИ (нормализованные).
+        🚧 Типы работ (нормализованные).
 
         Endpoint: GET /gati/orders/work-type/
         """
@@ -1654,7 +1695,7 @@ class ApiClientUnified:
 
     async def get_gati_work_types_raw(self) -> dict[str, Any]:
         """
-        🚧 Типы работ ГАТИ (сырые).
+        🚧 Типы работ (сырые).
 
         Endpoint: GET /gati/orders/work-type-all/
         """
@@ -1672,7 +1713,7 @@ class ApiClientUnified:
 
     async def get_gati_orders_district_stats(self) -> dict[str, Any]:
         """
-        🚧 Статистика ордеров ГАТИ по районам.
+        🚧 Статистика ордеров по районам.
 
         Endpoint: GET /gati/orders/district/
         """
@@ -1732,7 +1773,7 @@ class ApiClientUnified:
         Endpoint: GET /iparent/places/by_id/
         """
         url = f'{self.api_site}/iparent/places/by_id/'
-        params = {'id': place_id}
+        params = {'place_id': place_id}
         return await self._get_request('get_iparent_place_by_id', url, params)
 
     async def get_iparent_recreations_categories(
@@ -1741,7 +1782,7 @@ class ApiClientUnified:
         end_date: str | None = None,
     ) -> dict[str, Any]:
         """
-        👨‍👩‍👧 Категории досуга для детей (iParent).
+        👨‍👩‍👧 Категории детских активностей.
 
         Endpoint: GET /iparent/recreations/categoria/
         """
@@ -1793,7 +1834,10 @@ class ApiClientUnified:
         if end_date:
             params['end_date'] = end_date
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
@@ -1809,7 +1853,7 @@ class ApiClientUnified:
         region_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        👨‍👩‍👧 Мероприятие для детей по ID (iParent).
+        👨‍👩‍👧 Мероприятие по ID (iParent).
 
         Endpoint: GET /iparent/recreations/{id}
         """
@@ -1869,13 +1913,18 @@ class ApiClientUnified:
         if district:
             params['district'] = district
 
-        lat, lon = await self._resolve_coords(lat=lat, lon=lon, building_id=building_id, address_query=address_query)
+        lat, lon = await self._resolve_coords(
+            lat=lat, lon=lon,
+            building_id=building_id, address_query=address_query,
+        )
         if lat is not None:
             params['location_latitude'] = lat
         if lon is not None:
             params['location_longitude'] = lon
         if radius_km is not None:
             params['location_radius'] = radius_km
+
+        self._drop_district_if_coords(params, lat, lon, district_keys=('district',))
 
         return await self._get_request('get_gosstroy_map', url, params or None)
 
@@ -1938,7 +1987,7 @@ class ApiClientUnified:
         district: str | None = None,
     ) -> dict[str, Any]:
         """
-        🏗️ Статистика объектов Госстройнадзора по районам.
+        🏗️ Статистика объектов по районам.
 
         Endpoint: GET /gosstroy/stats/district/
         """
@@ -1948,18 +1997,20 @@ class ApiClientUnified:
             params['district'] = district
         return await self._get_request('get_gosstroy_district_stats', url, params or None)
 
+    # =========================================================================
     # LEGACY
-    # - TODO: удалить в будущем, когда будут готовы функции возвращающие Pydantic модели
+    # =========================================================================
+
     async def search_building_legacy(
         self,
         query: str,
         count: int = 5,
     ) -> list[BuildingSearchResult]:
         """
-        Поиск здания по адресу (полнотекстовый поиск). LEGACY.
+        LEGACY: Поиск здания по адресу (полнотекстовый поиск) с возвратом Pydantic-моделей.
         """
         async with ApiClientUnified() as client:
-            res = await client.search_building_full_text_search(query=query, count=10)
+            res = await client.search_building_full_text_search(query=query, count=count)
         if res['status_code'] != 200:
             raise YazzhAPIError(
                 f'Ошибка API при поиске адреса: {res["status_code"]}',
@@ -1967,7 +2018,10 @@ class ApiClientUnified:
             )
 
         data = res['json']
-        buildings_data = data.get('data') if isinstance(data, dict) else data
+        if isinstance(data, dict):
+            buildings_data = data.get('data', [])
+        else:
+            buildings_data = data
 
         if not buildings_data:
             raise AddressNotFoundError(f'Адрес не найден: {query}')
