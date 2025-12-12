@@ -254,8 +254,23 @@ def create_hybrid_v2_graph(checkpointer=None):
 # Entry point for langgraph.json
 # =============================================================================
 
+def _create_default_graph():
+    """
+    Создаёт граф с checkpointer по умолчанию.
+    
+    Checkpointer выбирается автоматически:
+    - PostgreSQL если POSTGRES_CHECKPOINTER_URL указан
+    - SQLite fallback иначе
+    """
+    from langgraph_app.agent.persistent_memory import get_checkpointer
+    
+    checkpointer = get_checkpointer()
+    return create_hybrid_v2_graph(checkpointer=checkpointer)
+
+
 # Создаём граф для использования в langgraph dev/up
-hybrid_v2_graph = create_hybrid_v2_graph()
+# ВАЖНО: Всегда с checkpointer для поддержки interrupt() в HITL
+hybrid_v2_graph = _create_default_graph()
 
 
 def get_hybrid_v2_graph():

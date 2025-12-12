@@ -114,7 +114,14 @@ YANDEX_API_KEY = os.getenv('YANDEX_API_KEY', '')
 # регион по умолчанию (78 = Санкт-Петербург)
 REGION_ID = os.getenv('REGION_ID', '78')
 
-# путь к базе данных для памяти агента
+# =============================================================================
+# Checkpointer Configuration
+# =============================================================================
+# PostgreSQL URL для checkpointer (production)
+# Если указан — используется PostgreSQL, иначе — SQLite fallback
+POSTGRES_CHECKPOINTER_URL = os.getenv('POSTGRES_CHECKPOINTER_URL', '')
+
+# путь к базе данных для памяти агента (SQLite fallback)
 MEMORY_DB_PATH = os.getenv('MEMORY_DB_PATH', 'data/memory.db')
 
 # Базовый путь пакета (для относительных путей к промптам)

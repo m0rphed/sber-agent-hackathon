@@ -1,30 +1,68 @@
 """
 Единообразная персистентная (сохраняющаяся) память для llm-агента
 
-- использует SqliteSaver от `langgraph` для хранения состояния агента;
-- предоставляет унифицированный API для получения истории чата, которое может использовать UI;
+Поддерживает два режима:
+- PostgreSQL (production): если указан POSTGRES_CHECKPOINTER_URL
+- MemorySaver (fallback/dev): если PostgreSQL не настроен
 
-Источником данных сообщений - с его помощью и агент, и UI получают чаты/состояние переписки.
+Предоставляет унифицированный API для получения истории чата.
 """
 
 from pathlib import Path
 import sqlite3
+from typing import Union
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 from langgraph_app.agent.utils import langchain_cast_sqlite_config as cast_sqlite_config
-from langgraph_app.config import MEMORY_DB_PATH
+from langgraph_app.config import MEMORY_DB_PATH, POSTGRES_CHECKPOINTER_URL
+from langgraph_app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # глобальные объекты для сохранения состояния
-# (TODO: улучшить потоковую безопасность)
 _db_connection: sqlite3.Connection | None = None
-_checkpointer: SqliteSaver | None = None
+_checkpointer: BaseCheckpointSaver | None = None
+_checkpointer_type: str | None = None  # "postgres" или "memory"
+
+
+def _create_postgres_checkpointer():
+    """
+    Создаёт PostgreSQL checkpointer.
+    
+    Returns:
+        PostgresSaver instance
+    
+    Raises:
+        ImportError: если langgraph-checkpoint-postgres не установлен
+    """
+    from langgraph.checkpoint.postgres import PostgresSaver
+    
+    saver = PostgresSaver.from_conn_string(POSTGRES_CHECKPOINTER_URL)
+    saver.setup()  # Создаёт таблицы если не существуют
+    return saver
+
+
+def _create_memory_checkpointer() -> MemorySaver:
+    """
+    Создаёт MemorySaver checkpointer (fallback для dev).
+    
+    Примечание: Это in-memory хранилище, данные теряются при перезапуске.
+    Для production используйте PostgreSQL через POSTGRES_CHECKPOINTER_URL.
+    
+    Returns:
+        MemorySaver instance
+    """
+    return MemorySaver()
 
 
 def get_db_connection() -> sqlite3.Connection:
     """
-    Возвращает SQLite соединение для персистентной памяти
+    Возвращает SQLite соединение для персистентной памяти.
+    
+    DEPRECATED: Используйте get_checkpointer() напрямую.
 
     Returns:
         sqlite3.Connection к базе данных памяти
@@ -32,30 +70,71 @@ def get_db_connection() -> sqlite3.Connection:
     global _db_connection
 
     if _db_connection is None:
-        # создаём директорию если не существует
         db_path = Path(MEMORY_DB_PATH)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # создаём подключение к SQLite
         _db_connection = sqlite3.connect(str(db_path), check_same_thread=False)
 
     return _db_connection
 
 
-def get_checkpointer() -> SqliteSaver:
+def get_checkpointer() -> BaseCheckpointSaver:
     """
-    Возвращает SQLite checkpointer (`SqliteSaver`) для персистентной памяти
+    Возвращает checkpointer для персистентной памяти.
+    
+    Логика выбора:
+    - Если POSTGRES_CHECKPOINTER_URL указан → PostgresSaver
+    - Иначе → MemorySaver (fallback)
 
     Returns:
-        SqliteSaver для сохранения состояния агента
+        BaseCheckpointSaver (PostgresSaver или MemorySaver)
     """
-    global _checkpointer
+    global _checkpointer, _checkpointer_type
 
     if _checkpointer is None:
-        conn = get_db_connection()
-        _checkpointer = SqliteSaver(conn)
+        if POSTGRES_CHECKPOINTER_URL:
+            try:
+                _checkpointer = _create_postgres_checkpointer()
+                _checkpointer_type = "postgres"
+                logger.info("checkpointer_initialized", type="postgres")
+            except ImportError as e:
+                logger.warning(
+                    "postgres_checkpointer_import_error",
+                    error=str(e),
+                    fallback="memory",
+                )
+                _checkpointer = _create_memory_checkpointer()
+                _checkpointer_type = "memory"
+                logger.info("checkpointer_initialized", type="memory", reason="postgres_import_failed")
+            except Exception as e:
+                logger.error(
+                    "postgres_checkpointer_connection_error",
+                    error=str(e),
+                    fallback="memory",
+                )
+                _checkpointer = _create_memory_checkpointer()
+                _checkpointer_type = "memory"
+                logger.info("checkpointer_initialized", type="memory", reason="postgres_connection_failed")
+        else:
+            _checkpointer = _create_memory_checkpointer()
+            _checkpointer_type = "memory"
+            logger.info("checkpointer_initialized", type="memory")
 
     return _checkpointer
+
+
+def get_checkpointer_type() -> str:
+    """
+    Возвращает тип текущего checkpointer.
+    
+    Returns:
+        "postgres" или "memory"
+    """
+    global _checkpointer_type
+    
+    if _checkpointer_type is None:
+        get_checkpointer()  # Инициализируем если ещё не
+    
+    return _checkpointer_type or "unknown"
 
 
 def get_chat_history(thread_id: str) -> list[BaseMessage]:

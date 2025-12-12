@@ -12,9 +12,6 @@ COPY pyproject.toml uv.lock ./
 # copy this package
 COPY packages/langgraph-app ./packages/langgraph-app
 
-# copy langgraph config to working directory
-COPY packages/langgraph-app/langgraph.json ./langgraph.json
-
 # copy shared libs
 COPY libs ./libs
 
@@ -31,6 +28,5 @@ EXPOSE 2024
 # Environment
 ENV HOST=0.0.0.0
 ENV PORT=2024
-
 # Run LangGraph server
-CMD ["uv", "run", "--package", "langgraph-app", "langgraph", "dev", "--no-browser", "--host", "0.0.0.0", "--port", "2024"]
+CMD ["uv", "run", "--package", "langgraph-app", "langgraph", "up", "--host", "0.0.0.0", "--port", "2024"]
