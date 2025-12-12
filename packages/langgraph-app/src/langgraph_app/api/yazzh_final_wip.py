@@ -1058,6 +1058,60 @@ class ApiClientUnified:
         params = {'district': district}
         return await self._get_request('get_dou_commissions', url, params)
 
+    async def get_dou_by_user_address(
+        self,
+        *,
+        id_build: int,
+        legal_form: str | None = None,
+        age_year: int | None = None,
+        age_month: int | None = None,
+        group_type: str | None = None,
+        group_shift: str | None = None,
+        edu_program: list[str] | None = None,
+        available_spots: int | None = None,
+        disabled_type: str | None = None,
+        recovery_type: str | None = None,
+        doo_status: str | None = None,
+    ) -> Any:
+        """
+        Поиск детских садов по адресу пользователя.
+
+        Логика:
+        1) По id_build дома получаем район через /districts-info/building-id/{id}.
+        2) Вызываем /dou/ с подставленным районом и переданными фильтрами.
+        """
+        # 1. Определяем район по дому
+        district_info = await self.get_district_info_by_building(id_build=id_build)
+
+        district: str | None = None
+        if isinstance(district_info, dict):
+            # Пытаемся аккуратно вытащить название района из разных возможных ключей
+            district = (
+                district_info.get('district_name')
+                or district_info.get('district')
+                or (district_info.get('district_info') or {}).get('district_name')
+                or (district_info.get('district_info') or {}).get('district')
+            )
+
+        if not district:
+            # Если из ответа ничего разумного не достали — считаем, что адрес не найден/непривязан
+            raise AddressNotFoundError('Не удалось определить район по id_build (адрес пользователя).')
+
+        # 2. Ищем детские сады по полученному району и фильтрам
+        return await self.get_dou(
+            legal_form=legal_form,
+            district=district,
+            age_year=age_year,
+            age_month=age_month,
+            group_type=group_type,
+            group_shift=group_shift,
+            edu_program=edu_program,
+            available_spots=available_spots,
+            disabled_type=disabled_type,
+            recovery_type=recovery_type,
+            doo_status=doo_status,
+        )
+
 
     # =========================================================================
     # РАЙОН - СПРАВКА
