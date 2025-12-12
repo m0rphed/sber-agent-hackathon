@@ -251,28 +251,44 @@ def create_hybrid_v2_graph(checkpointer=None):
 
 
 # =============================================================================
-# Entry point for langgraph.json
+# Entry point for direct usage (CLI scripts, tests)
 # =============================================================================
 
-def _create_default_graph():
-    """
-    Создаёт граф с checkpointer по умолчанию.
-    
-    Checkpointer выбирается автоматически:
-    - PostgreSQL если POSTGRES_CHECKPOINTER_URL указан
-    - SQLite fallback иначе
-    """
-    from langgraph_app.agent.persistent_memory import get_checkpointer
-    
-    checkpointer = get_checkpointer()
-    return create_hybrid_v2_graph(checkpointer=checkpointer)
-
-
-# Создаём граф для использования в langgraph dev/up
-# ВАЖНО: Всегда с checkpointer для поддержки interrupt() в HITL
-hybrid_v2_graph = _create_default_graph()
+_cached_graph = None
 
 
 def get_hybrid_v2_graph():
-    """Возвращает скомпилированный граф (кэшированный на уровне модуля)."""
-    return hybrid_v2_graph
+    """
+    Возвращает скомпилированный граф с checkpointer.
+    
+    Checkpointer выбирается автоматически:
+    - PostgreSQL если POSTGRES_CHECKPOINTER_URL указан
+    - MemorySaver fallback иначе
+    
+    Используется для CLI скриптов и тестов.
+    Для LangGraph Server используйте graphs.py:hybrid() (без checkpointer).
+    """
+    global _cached_graph
+    
+    if _cached_graph is None:
+        from langgraph_app.agent.persistent_memory import get_checkpointer
+        
+        checkpointer = get_checkpointer()
+        _cached_graph = create_hybrid_v2_graph(checkpointer=checkpointer)
+    
+    return _cached_graph
+
+
+# Ленивый alias для обратной совместимости
+# ВАЖНО: Создаётся только при первом обращении через get_hybrid_v2_graph()
+class _LazyGraph:
+    """Lazy proxy для графа — создаётся только при первом доступе."""
+    
+    def __getattr__(self, name):
+        return getattr(get_hybrid_v2_graph(), name)
+    
+    def __repr__(self):
+        return repr(get_hybrid_v2_graph())
+
+
+hybrid_v2_graph = _LazyGraph()
