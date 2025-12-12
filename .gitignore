@@ -235,3 +235,6 @@ data/
 data/parsed_docs/
 data/chroma_db/
 data/index_metadata.json
+
+notebooks/api_dumps/
+notebooks/api_dumps.zip
