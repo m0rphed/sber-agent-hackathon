@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 import os
 from pathlib import Path
+import sys
 
 # =============================================================================
 # Lazy .env loading
@@ -60,6 +61,9 @@ def ensure_dotenv() -> None:
 # Базовые переменные окружения (legacy compatibility)
 # =============================================================================
 
+# ВАЖНО: загружаем .env ДО чтения переменных окружения!
+ensure_dotenv()
+
 
 def _get_data_dir() -> Path:
     """
@@ -71,7 +75,26 @@ def _get_data_dir() -> Path:
 # базовая директория для данных (lazy property)
 DATA_DIR = _get_data_dir()
 
-# GigaChat
+
+def get_gigachat_credentials() -> str:
+    """Lazy getter для GIGACHAT_CREDENTIALS."""
+    ensure_dotenv()
+    return os.getenv('GIGACHAT_CREDENTIALS', '')
+
+
+def get_gigachat_scope() -> str:
+    """Lazy getter для GIGACHAT_SCOPE."""
+    ensure_dotenv()
+    return os.getenv('GIGACHAT_SCOPE', '')
+
+
+def get_gigachat_verify_ssl() -> bool:
+    """Lazy getter для GIGACHAT_VERIFY_SSL_CERTS."""
+    ensure_dotenv()
+    return os.getenv('GIGACHAT_VERIFY_SSL_CERTS', 'false').lower() == 'true'
+
+
+# GigaChat (legacy - используйте get_gigachat_* функции)
 GIGACHAT_CREDENTIALS = os.getenv('GIGACHAT_CREDENTIALS', '')
 GIGACHAT_SCOPE = os.getenv('GIGACHAT_SCOPE', '')
 GIGACHAT_VERIFY_SSL_CERTS = os.getenv('GIGACHAT_VERIFY_SSL_CERTS', 'false').lower() == 'true'
@@ -94,7 +117,19 @@ REGION_ID = os.getenv('REGION_ID', '78')
 # путь к базе данных для памяти агента
 MEMORY_DB_PATH = os.getenv('MEMORY_DB_PATH', 'data/memory.db')
 
-SYSTEM_PROMPT_PATH = os.getenv('SYSTEM_PROMPT_PATH', 'prompts/city_agent_prompt.txt')
+# Базовый путь пакета (для относительных путей к промптам)
+_PACKAGE_DIR = Path(__file__).parent
+# Корень проекта (UV workspace root) - packages/langgraph-app/src/langgraph_app -> 4 уровня вверх
+_PROJECT_ROOT = _PACKAGE_DIR.parent.parent.parent.parent
+
+# Добавляем корень проекта в sys.path для импорта prompts
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+SYSTEM_PROMPT_PATH = os.getenv(
+    'SYSTEM_PROMPT_PATH',
+    str(_PROJECT_ROOT / 'prompts' / 'city_agent_prompt.txt')
+)
 
 
 # =============================================================================

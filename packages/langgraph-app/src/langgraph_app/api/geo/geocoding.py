@@ -11,11 +11,9 @@ import json
 import os
 
 from dotenv import load_dotenv
-import osmnx as ox
 from ymaps import GeocodeAsync
 
 from langgraph_app.config import get_geo_config
-from langgraph_app.osmnx_config import get_osm_geocode_db
 
 load_dotenv()
 
@@ -50,11 +48,15 @@ async def spb_metro_station_to_coords(metro_name: str) -> tuple[float, float] | 
     return None
 
 
-async def address_to_coords_yandex(user_address: str) -> tuple[float, float] | None:
+async def address_to_coords_yandex(
+    user_address: str, rich_logging: bool = False
+) -> tuple[float, float] | None:
     """
     Геокодирование адреса в координаты.
     Возвращает [lat, lon] или None, если ничего не найдено.
     """
+    import rich
+
     lower_user_address = user_address.lower()
     if (
         'спб' not in lower_user_address
@@ -65,6 +67,8 @@ async def address_to_coords_yandex(user_address: str) -> tuple[float, float] | N
         user_address = 'Санкт-Петербург, ' + user_address
 
     data = await _yandex_geocode_client.geocode(user_address, results=1, format='json')
+    if rich_logging:
+        rich.print_json(json.dumps(data, ensure_ascii=False, indent=2))
 
     collection = data['response']['GeoObjectCollection']
     members = collection.get('featureMember', [])
@@ -138,6 +142,10 @@ def geocode_with_cache(address: str) -> tuple[float, float] | None:
 
     Если Nominatim не смог найти или вернул ошибку — возвращает None.
     """
+    import osmnx as ox
+
+    from langgraph_app.osmnx_config import get_osm_geocode_db
+
     geo_cfg = get_geo_config()
     conn = get_osm_geocode_db()
     full = f'{address}, {geo_cfg.city_name}'

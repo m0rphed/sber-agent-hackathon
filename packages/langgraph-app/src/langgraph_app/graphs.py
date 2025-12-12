@@ -33,40 +33,40 @@ logger = get_logger(__name__)
 # =============================================================================
 
 
-# def supervisor(config: RunnableConfig | None = None) -> CompiledStateGraph:
-#     """
-#     Создаёт Supervisor Graph — основной агент с intent-based routing.
+def supervisor(config: RunnableConfig | None = None) -> CompiledStateGraph:
+    """
+    Создаёт Supervisor Graph — основной агент с intent-based routing.
 
-#     Архитектура:
-#         START → check_toxicity → classify_intent → [router]
-#                                                       ↓
-#                     ┌─────────────────────────────────┼─────────────────────────────────┐
-#                     ↓                                 ↓                                 ↓
-#               api_handler                       rag_search                       conversation
-#               (МФЦ, пенсионеры)                (госуслуги)                    (приветствия)
-#                     ↓                                 ↓                                 ↓
-#                     └─────────────────────────────────┼─────────────────────────────────┘
-#                                                       ↓
-#                                                generate_response → END
+    Архитектура:
+        START → check_toxicity → classify_intent → [router]
+                                                      ↓
+                    ┌─────────────────────────────────┼─────────────────────────────────┐
+                    ↓                                 ↓                                 ↓
+              api_handler                       rag_search                       conversation
+              (МФЦ, пенсионеры)                (госуслуги)                    (приветствия)
+                    ↓                                 ↓                                 ↓
+                    └─────────────────────────────────┼─────────────────────────────────┘
+                                                      ↓
+                                               generate_response → END
 
-#     Args:
-#         config: Runtime конфигурация (thread_id, metadata, etc.)
+    Args:
+        config: Runtime конфигурация (thread_id, metadata, etc.)
 
-#     Returns:
-#         Скомпилированный StateGraph
-#     """
-#     from langgraph_app.agent.supervisor import create_supervisor_graph
+    Returns:
+        Скомпилированный StateGraph
+    """
+    from langgraph_app.agent.supervisor import create_supervisor_graph
 
-#     logger.info(
-#         'graph_factory_supervisor',
-#         config_present=config is not None,
-#     )
+    logger.info(
+        'graph_factory_supervisor',
+        config_present=config is not None,
+    )
 
-#     # Agent Server управляет checkpointer через Postgres
-#     # Поэтому создаём граф без встроенного checkpointer
-#     graph = create_supervisor_graph(checkpointer=None)
+    # Agent Server управляет checkpointer через Postgres
+    # Поэтому создаём граф без встроенного checkpointer
+    graph = create_supervisor_graph(checkpointer=None)
 
-#     return graph
+    return graph
 
 
 def hybrid(config: RunnableConfig | None = None) -> CompiledStateGraph:
@@ -96,36 +96,36 @@ def hybrid(config: RunnableConfig | None = None) -> CompiledStateGraph:
     return graph
 
 
-# def rag(config: RunnableConfig | None = None) -> CompiledStateGraph:
-#     """
-#     Создаёт RAG Graph — пайплайн для поиска по базе знаний.
+def rag(config: RunnableConfig | None = None) -> CompiledStateGraph:
+    """
+    Создаёт RAG Graph — пайплайн для поиска по базе знаний.
 
-#     Архитектура:
-#         START → rewrite_query → retrieve → deduplicate → grade → END
+    Архитектура:
+        START → rewrite_query → retrieve → deduplicate → grade → END
 
-#     Опциональные улучшения (включены по умолчанию):
-#         - Query rewriting для улучшения поиска
-#         - Document grading для фильтрации нерелевантных
+    Опциональные улучшения (включены по умолчанию):
+        - Query rewriting для улучшения поиска
+        - Document grading для фильтрации нерелевантных
 
-#     Args:
-#         config: Runtime конфигурация
+    Args:
+        config: Runtime конфигурация
 
-#     Returns:
-#         Скомпилированный StateGraph
-#     """
-#     from langgraph_app.rag.rag_graph import create_rag_graph
+    Returns:
+        Скомпилированный StateGraph
+    """
+    from langgraph_app.rag.graph import create_rag_graph
 
-#     logger.info(
-#         'graph_factory_rag',
-#         config_present=config is not None,
-#     )
+    logger.info(
+        'graph_factory_rag',
+        config_present=config is not None,
+    )
 
-#     graph = create_rag_graph(
-#         use_query_rewriting=True,
-#         use_document_grading=True,
-#     )
+    graph = create_rag_graph(
+        use_query_rewriting=True,
+        use_document_grading=True,
+    )
 
-#     return graph
+    return graph
 
 
 # =============================================================================
@@ -138,13 +138,13 @@ def hybrid(config: RunnableConfig | None = None) -> CompiledStateGraph:
 _cached_graphs: dict[str, CompiledStateGraph] = {}
 
 
-# def get_supervisor() -> CompiledStateGraph:
-#     """
-#     Возвращает кэшированный Supervisor Graph
-#     """
-#     if 'supervisor' not in _cached_graphs:
-#         _cached_graphs['supervisor'] = supervisor()
-#     return _cached_graphs['supervisor']
+def get_supervisor() -> CompiledStateGraph:
+    """
+    Возвращает кэшированный Supervisor Graph
+    """
+    if 'supervisor' not in _cached_graphs:
+        _cached_graphs['supervisor'] = supervisor()
+    return _cached_graphs['supervisor']
 
 
 def get_hybrid() -> CompiledStateGraph:
@@ -156,13 +156,13 @@ def get_hybrid() -> CompiledStateGraph:
     return _cached_graphs['hybrid']
 
 
-# def get_rag() -> CompiledStateGraph:
-#     """
-#     Возвращает кэшированный RAG Graph
-#     """
-#     if 'rag' not in _cached_graphs:
-#         _cached_graphs['rag'] = rag()
-#     return _cached_graphs['rag']
+def get_rag() -> CompiledStateGraph:
+    """
+    Возвращает кэшированный RAG Graph
+    """
+    if 'rag' not in _cached_graphs:
+        _cached_graphs['rag'] = rag()
+    return _cached_graphs['rag']
 
 
 # =============================================================================
@@ -175,10 +175,10 @@ def get_hybrid() -> CompiledStateGraph:
 #   "./app/graphs.py:rag"          → rag function
 
 __all__ = [
-    # 'supervisor',
+    'supervisor',
     'hybrid',
-    # 'rag',
-    # 'get_supervisor',
+    'rag',
+    'get_supervisor',
     'get_hybrid',
-    # 'get_rag',
+    'get_rag',
 ]

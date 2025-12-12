@@ -18,21 +18,34 @@ class ToolCategory(str, Enum):
 
     Каждая категория соответствует определённому набору tools,
     что позволяет передавать ReAct агенту только релевантные инструменты.
+    
+    ВАЖНО: Каждая категория уникальна, без дублирования!
     """
 
-    # API категории (требуют tools)
-    MFC = 'mfc'  # МФЦ: поиск, информация
-    PENSIONER = 'pensioner'  # Услуги для пенсионеров
-    GEO = 'geo'  # География: районы, адреса
-    HEALTHCARE = 'healthcare'  # Поликлиники, ветеринарные клиники
-    EDUCATION = 'education'  # Школы, детсады
-    HOUSING = 'housing'  # УК, ЖКХ, отключения
-    EVENTS = 'events'  # Мероприятия, события
-    RECREATION = 'recreation'  # Спорт, парки, достопримечательности
-    INFRASTRUCTURE = 'infrastructure'  # Дорожные работы
+    # Geo / Address
+    ADDRESS = 'address'  # Поиск адреса (search_address)
+    DISTRICT = 'district'  # Информация о районах
 
-    # Не-API категории
-    RAG = 'rag'  # Справочная информация (документы, льготы)
+    # Городские сервисы
+    MFC = 'mfc'  # МФЦ: поиск ближайшего, по району, все
+    POLYCLINIC = 'polyclinic'  # Поликлиники (медицина для людей)
+    SCHOOL = 'school'  # Школы
+    KINDERGARTEN = 'kindergarten'  # Детские сады
+    HOUSING = 'housing'  # УК, ЖКХ, отключения воды/света
+
+    # Питомцы (ВСЁ про животных)
+    PETS = 'pets'  # Ветеринарки, парки для собак, приюты
+
+    # Активности и отдых
+    PENSIONER = 'pensioner'  # Услуги и занятия для пенсионеров
+    EVENTS = 'events'  # Городские мероприятия, спортивные события
+    RECREATION = 'recreation'  # Спортплощадки, красивые места, маршруты
+
+    # Инфраструктура
+    INFRASTRUCTURE = 'infrastructure'  # Дорожные работы, переработка
+
+    # Не-API категории (без tools)
+    RAG = 'rag'  # Справочная информация (документы, льготы, законы)
     CONVERSATION = 'conversation'  # Small talk, вопросы о боте
 
 
@@ -117,14 +130,22 @@ class AddressValidation(BaseModel):
 
 # категории, которые требуют API tools
 API_CATEGORIES: set[ToolCategory] = {
+    # Geo
+    ToolCategory.ADDRESS,
+    ToolCategory.DISTRICT,
+    # Городские сервисы
     ToolCategory.MFC,
-    ToolCategory.PENSIONER,
-    ToolCategory.GEO,
-    ToolCategory.HEALTHCARE,
-    ToolCategory.EDUCATION,
+    ToolCategory.POLYCLINIC,
+    ToolCategory.SCHOOL,
+    ToolCategory.KINDERGARTEN,
     ToolCategory.HOUSING,
+    # Питомцы
+    ToolCategory.PETS,
+    # Активности
+    ToolCategory.PENSIONER,
     ToolCategory.EVENTS,
     ToolCategory.RECREATION,
+    # Инфраструктура
     ToolCategory.INFRASTRUCTURE,
 }
 

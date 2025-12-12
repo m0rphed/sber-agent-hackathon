@@ -9,30 +9,17 @@
 
 from pathlib import Path
 import sqlite3
-from typing import cast
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.runnables.config import CONFIG_KEYS, COPIABLE_KEYS
-from langgraph.checkpoint.sqlite import RunnableConfig, SqliteSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
+from langgraph_app.agent.utils import langchain_cast_sqlite_config as cast_sqlite_config
 from langgraph_app.config import MEMORY_DB_PATH
 
 # глобальные объекты для сохранения состояния
 # (TODO: улучшить потоковую безопасность)
 _db_connection: sqlite3.Connection | None = None
 _checkpointer: SqliteSaver | None = None
-
-
-def langchain_cast_sqlite_config(config: dict[str, dict | object]) -> RunnableConfig:
-    res = cast(
-        'RunnableConfig',
-        {
-            k: v.copy() if k in COPIABLE_KEYS else v  # type: ignore[attr-defined]
-            for k, v in config.items()
-            if v is not None and k in CONFIG_KEYS
-        },
-    )
-    return res
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -87,7 +74,7 @@ def get_chat_history(thread_id: str) -> list[BaseMessage]:
     checkpointer = get_checkpointer()
 
     config = {'configurable': {'thread_id': thread_id, 'checkpoint_ns': ''}}
-    _config_runnable = langchain_cast_sqlite_config(config)
+    _config_runnable = cast_sqlite_config(config)
     try:
         checkpoint = checkpointer.get(_config_runnable)
 

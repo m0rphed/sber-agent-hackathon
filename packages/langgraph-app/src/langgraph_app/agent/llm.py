@@ -4,12 +4,14 @@
 Использует централизованную конфигурацию из app.config.
 """
 
+from __future__ import annotations
+
 from langchain_gigachat import GigaChat
 
 from langgraph_app.config import (
-    GIGACHAT_CREDENTIALS,
-    GIGACHAT_SCOPE,
-    GIGACHAT_VERIFY_SSL_CERTS,
+    get_gigachat_credentials,
+    get_gigachat_scope,
+    get_gigachat_verify_ssl,
     AgentConfig,
     get_agent_config,
 )
@@ -21,9 +23,9 @@ def get_llm_for_intent_routing() -> GigaChat:
     Те же креды GigaChat, но максимально детерминированные настройки.
     """
     return GigaChat(
-        credentials=GIGACHAT_CREDENTIALS,
-        scope=GIGACHAT_SCOPE,
-        verify_ssl_certs=GIGACHAT_VERIFY_SSL_CERTS,
+        credentials=get_gigachat_credentials(),
+        scope=get_gigachat_scope(),
+        verify_ssl_certs=get_gigachat_verify_ssl(),
         # важные параметры именно для роутинга:
         temperature=0.0,
         max_tokens=256,
@@ -32,7 +34,6 @@ def get_llm_for_intent_routing() -> GigaChat:
         # frequency_penalty=0.0,
         # presence_penalty=0.0,
     )
-
 
 def get_llm(
     temperature: float | None = None,
@@ -59,9 +60,9 @@ def get_llm(
     effective_timeout = timeout if timeout is not None else float(cfg.timeout.llm_seconds)
 
     return GigaChat(
-        credentials=GIGACHAT_CREDENTIALS,
-        scope=GIGACHAT_SCOPE,
-        verify_ssl_certs=GIGACHAT_VERIFY_SSL_CERTS,
+        credentials=get_gigachat_credentials(),
+        scope=get_gigachat_scope(),
+        verify_ssl_certs=get_gigachat_verify_ssl(),
         model=cfg.llm.model,
         temperature=effective_temp,
         max_tokens=effective_max_tokens,
@@ -105,7 +106,7 @@ def get_llm_for_conversation(config: AgentConfig | None = None) -> GigaChat:
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     llm = get_llm()
-    response = llm.invoke('Привет! Расскажи кратко о Санкт-Петербурге.')
+    response = llm.invoke("Привет! Расскажи кратко о Санкт-Петербурге.")
     print(response.content)

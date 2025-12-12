@@ -54,15 +54,14 @@ DEFAULT_JITTER: bool = True
 
 
 class AgentErrorType(StrEnum):
-    """
-    Типы ошибок агента
-    """
-    TRANSIENT = 'transient'     # временная ошибка (retry поможет)
-    TIMEOUT = 'timeout'         # таймаут запроса
-    RATE_LIMIT = 'rate_limit'   # превышен лимит запросов
-    SERVICE_UNAVAILABLE = 'service_unavailable' # сервис недоступен
-    VALIDATION = 'validation'   # ошибка валидации данных
-    UNKNOWN = 'unknown'         # неизвестная ошибка
+    """Типы ошибок агента."""
+
+    TRANSIENT = 'transient'  # Временная ошибка (retry поможет)
+    TIMEOUT = 'timeout'  # Таймаут запроса
+    RATE_LIMIT = 'rate_limit'  # Превышен лимит запросов
+    SERVICE_UNAVAILABLE = 'service_unavailable'  # Сервис недоступен
+    VALIDATION = 'validation'  # Ошибка валидации данных
+    UNKNOWN = 'unknown'  # Неизвестная ошибка
 
 
 @dataclass
@@ -75,7 +74,7 @@ class AgentError(Exception):
 
     error_type: AgentErrorType
     message: str
-    user_message: str   # сообщение для пользователя
+    user_message: str  # Сообщение для пользователя
     details: dict[str, Any] | None = None
     original_exception: Exception | None = None
 
@@ -84,9 +83,7 @@ class AgentError(Exception):
 
     @property
     def is_retryable(self) -> bool:
-        """
-        Можно ли повторить запрос
-        """
+        """Можно ли повторить запрос."""
         return self.error_type in (
             AgentErrorType.TRANSIENT,
             AgentErrorType.TIMEOUT,
@@ -95,9 +92,7 @@ class AgentError(Exception):
 
 
 class LLMTimeoutError(AgentError):
-    """
-    Таймаут при вызове LLM
-    """
+    """Таймаут при вызове LLM."""
 
     def __init__(self, timeout: float, details: dict | None = None):
         super().__init__(
@@ -109,9 +104,7 @@ class LLMTimeoutError(AgentError):
 
 
 class LLMServiceError(AgentError):
-    """
-    Ошибка сервиса LLM (5xx)
-    """
+    """Ошибка сервиса LLM (5xx)."""
 
     def __init__(self, status_code: int | None = None, details: dict | None = None):
         super().__init__(
@@ -123,9 +116,7 @@ class LLMServiceError(AgentError):
 
 
 class APITimeoutError(AgentError):
-    """
-    Таймаут при вызове внешнего API
-    """
+    """Таймаут при вызове внешнего API."""
 
     def __init__(self, api_name: str, timeout: float, details: dict | None = None):
         super().__init__(
@@ -137,9 +128,7 @@ class APITimeoutError(AgentError):
 
 
 class RateLimitError(AgentError):
-    """
-    Превышен лимит запросов
-    """
+    """Превышен лимит запросов."""
 
     def __init__(self, retry_after: float | None = None, details: dict | None = None):
         super().__init__(
@@ -310,7 +299,7 @@ def get_api_retry_policy(config: AgentConfig | None = None) -> RetryPolicy:
         RetryPolicy для API
     """
     cfg = config or get_agent_config()
-    # для API меньше попыток и меньше интервал
+    # Для API меньше попыток и меньше интервал
     return RetryPolicy(
         max_attempts=max(1, cfg.retry.max_attempts - 1),
         initial_interval=cfg.retry.initial_interval * 0.5,
@@ -394,9 +383,9 @@ def get_llm_with_timeout(
     from langchain_gigachat import GigaChat
 
     from langgraph_app.config import (
-        GIGACHAT_CREDENTIALS,
-        GIGACHAT_SCOPE,
-        GIGACHAT_VERIFY_SSL_CERTS,
+        get_gigachat_credentials,
+        get_gigachat_scope,
+        get_gigachat_verify_ssl,
     )
 
     cfg = config or get_agent_config()
@@ -406,9 +395,9 @@ def get_llm_with_timeout(
     effective_timeout = timeout if timeout is not None else float(cfg.timeout.llm_seconds)
 
     return GigaChat(
-        credentials=GIGACHAT_CREDENTIALS,
-        scope=GIGACHAT_SCOPE,
-        verify_ssl_certs=GIGACHAT_VERIFY_SSL_CERTS,
+        credentials=get_gigachat_credentials(),
+        scope=get_gigachat_scope(),
+        verify_ssl_certs=get_gigachat_verify_ssl(),
         temperature=effective_temp,
         max_tokens=effective_max_tokens,
         timeout=effective_timeout,

@@ -27,9 +27,7 @@ IS_DEBUG = LOG_LEVEL == 'DEBUG' or os.getenv('DEBUG', 'false').lower() == 'true'
 
 
 def _add_app_context(
-    logger: logging.Logger,
-    method_name: str,
-    event_dict: dict[str, Any]
+    logger: logging.Logger, method_name: str, event_dict: dict[str, Any]
 ) -> dict[str, Any]:
     """
     Добавляет контекст приложения в каждое сообщение
@@ -46,13 +44,13 @@ def _order_keys(
     """
     ordered = {}
 
-    # приоритетные ключи в начале
+    # Приоритетные ключи в начале
     priority_keys = ['timestamp', 'level', 'event', 'logger']
     for key in priority_keys:
         if key in event_dict:
             ordered[key] = event_dict.pop(key)
 
-    # остальные ключи в алфавитном порядке
+    # Остальные ключи в алфавитном порядке
     for key in sorted(event_dict.keys()):
         ordered[key] = event_dict[key]
 
