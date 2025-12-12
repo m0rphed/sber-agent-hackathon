@@ -127,13 +127,14 @@ _METRO_BY_NAME_NORM: dict[str, dict] | None = None
 _METRO_INDEX: dict[str, str] | None = None
 
 
+
 def _load_metro_data() -> list[dict]:
     """
     Загружает JSON со статикой метро (coords/address/line/closed) и кеширует в памяти.
     """
     global _METRO_CACHE
     if _METRO_CACHE is None:
-        path = Path('./data/spb_metro.json')
+        path = Path('spb_metro.json') #для блокнота просто spb_metro.json, для прода: './data/spb_metro.json'
         with path.open(encoding='utf-8') as f:
             _METRO_CACHE = json.load(f)
     return _METRO_CACHE
@@ -188,34 +189,35 @@ def _build_metro_indexes() -> None:
             by_name[normalize_text(name)] = item
         _METRO_BY_NAME_NORM = by_name
 
+def is_explicit_metro_query(text: str) -> bool:
+    t = text.lower()
+    return any(
+        kw in t
+        for kw in ('метро', 'м.', 'станция')
+    )
+
+
+def has_address_number(text: str) -> bool:
+    return any(ch.isdigit() for ch in text)
 
 def extract_metro_station(address: str) -> str | None:
-    """
-    Определяет станцию метро ТОЛЬКО если запрос действительно про метро.
-    """
     _build_metro_indexes()
 
-    q_raw = address
-    q = normalize_text(address)
-
-    if not q:
+    q_norm = normalize_text(address)
+    if not q_norm:
         return None
 
-    # ⛔ если это похоже на адрес — НЕ метро
-    if looks_like_address(q_raw):
+    # 1️⃣ метро ТОЛЬКО если явно указано
+    if is_explicit_metro_query(address):
+        return _METRO_INDEX.get(q_norm)
+
+    # 2️⃣ если есть номер — это адрес, не метро
+    if has_address_number(address):
         return None
 
-    # 1) точное совпадение
-    if q in _METRO_INDEX:
-        return _METRO_INDEX[q]
-
-    # 2) частичное совпадение (короткий запрос)
-    if len(q.split()) <= 2:
-        for key, original in _METRO_INDEX.items():
-            if q == key or q in key:
-                return original
-
+    # 3️⃣ омонимы → не решаем здесь
     return None
+
 
 
 
@@ -317,7 +319,7 @@ async def geocode_with_yandex(address: str) -> GeocodingResult | None:
     Геокодирует адрес через Yandex Geocoder API.
     """
     from langgraph_app.api.geo.geocoding import address_to_coords_yandex
-
+    
     try:
         coords = await address_to_coords_yandex(address)
         if coords:
@@ -364,38 +366,41 @@ async def geocode_address(
     prefer_yazzh: bool = True,
     include_metro: bool = True,
 ) -> GeocodingResult | None:
-    """
-    Главная функция геокодирования: возвращает один лучший результат.
-    """
-    # 1) метро (по списку станций + JSON)
-    if include_metro:
+
+    # 1️⃣ если явно метро — сначала метро
+    if include_metro and is_explicit_metro_query(address):
         metro_results = geocode_metro_candidates(address)
         if metro_results:
-            station = extract_metro_station(address) or address
-            logger.info('geocoded_via_metro', station=station)
+            logger.info('geocoded_via_metro_explicit', address=address)
             return metro_results[0]
 
-    # 2) yazzh
+    # 2️⃣ пробуем адрес (YAZZH)
     if prefer_yazzh:
         results = await geocode_with_yazzh(address, limit=1)
         if results:
             logger.info('geocoded_via_yazzh', address=address)
             return results[0]
 
-    # 3) yandex
+    # 3️⃣ Yandex
     result = await geocode_with_yandex(address)
     if result:
         logger.info('geocoded_via_yandex', address=address)
         return result
 
-    # 4) nominatim
+    # 4️⃣ если адрес не найден — пробуем метро как fallback
+    if include_metro:
+        metro_results = geocode_metro_candidates(address)
+        if metro_results:
+            logger.info('geocoded_via_metro_fallback', address=address)
+            return metro_results[0]
+
+    # 5️⃣ nominatim
     result = geocode_with_nominatim(address)
     if result:
-        logger.info('geocoded_via_nominatim', address=address)
         return result
 
-    logger.warning('geocoding_failed_all_sources', address=address)
     return None
+
 
 
 async def geocode_address_with_candidates(

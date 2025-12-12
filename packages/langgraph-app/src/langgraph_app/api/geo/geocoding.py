@@ -12,6 +12,7 @@ import os
 
 from dotenv import load_dotenv
 from ymaps import GeocodeAsync
+import rich as r
 
 from langgraph_app.config import get_geo_config
 
@@ -74,7 +75,7 @@ async def address_to_coords_yandex(
     members = collection.get('featureMember', [])
     if not members:
         return None
-
+    r.print(collection, members)
     geo_obj = members[0]['GeoObject']
 
     # "lon lat" (строка)
