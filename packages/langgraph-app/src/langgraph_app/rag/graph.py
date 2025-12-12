@@ -27,6 +27,7 @@ from langchain_core.documents import Document
 # Импорты LangGraph - актуальный API v1
 # ВАЖНО: используем именно эти импорты для совместимости
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from langgraph_app.logging_config import get_logger
 
@@ -349,7 +350,7 @@ def create_rag_graph(
     use_query_rewriting: bool = True,
     use_document_grading: bool = True,
     use_toxicity_check: bool = True,
-) -> StateGraph:
+) -> CompiledStateGraph:
     """
     Создаёт RAG пайплайн как LangGraph.
 
@@ -417,11 +418,8 @@ def create_rag_graph(
         builder.add_edge('deduplicate_chunks', 'format_response')
 
     builder.add_edge('format_response', END)
-
     graph = builder.compile()
-
     logger.info('graph_build_complete', nodes=list(graph.nodes.keys()))
-
     return graph
 
 
@@ -557,7 +555,7 @@ if __name__ == '__main__':
 
     # Тест 1: Нормальный запрос
     query = 'как получить загранпаспорт'
-    print(f"\n{'=' * 60}")
+    print(f'\n{"=" * 60}')
     print(f"Тест 1: Нормальный запрос: '{query}'")
     print('=' * 60)
 
@@ -574,7 +572,7 @@ if __name__ == '__main__':
 
     # Тест 2: Токсичный запрос
     toxic_query = 'ты тупой идиот, ответь мне!'
-    print(f"\n{'=' * 60}")
+    print(f'\n{"=" * 60}')
     print(f"Тест 2: Токсичный запрос: '{toxic_query}'")
     print('=' * 60)
 

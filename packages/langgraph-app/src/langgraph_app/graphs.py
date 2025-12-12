@@ -33,42 +33,6 @@ logger = get_logger(__name__)
 # =============================================================================
 
 
-def supervisor(config: RunnableConfig | None = None) -> CompiledStateGraph:
-    """
-    Создаёт Supervisor Graph — основной агент с intent-based routing.
-
-    Архитектура:
-        START → check_toxicity → classify_intent → [router]
-                                                      ↓
-                    ┌─────────────────────────────────┼─────────────────────────────────┐
-                    ↓                                 ↓                                 ↓
-              api_handler                       rag_search                       conversation
-              (МФЦ, пенсионеры)                (госуслуги)                    (приветствия)
-                    ↓                                 ↓                                 ↓
-                    └─────────────────────────────────┼─────────────────────────────────┘
-                                                      ↓
-                                               generate_response → END
-
-    Args:
-        config: Runtime конфигурация (thread_id, metadata, etc.)
-
-    Returns:
-        Скомпилированный StateGraph
-    """
-    from langgraph_app.agent.supervisor import create_supervisor_graph
-
-    logger.info(
-        'graph_factory_supervisor',
-        config_present=config is not None,
-    )
-
-    # Agent Server управляет checkpointer через Postgres
-    # Поэтому создаём граф без встроенного checkpointer
-    graph = create_supervisor_graph(checkpointer=None)
-
-    return graph
-
-
 def hybrid(config: RunnableConfig | None = None) -> CompiledStateGraph:
     """
     Создаёт Hybrid Graph — агент с ReAct для сложных API запросов.
@@ -84,14 +48,14 @@ def hybrid(config: RunnableConfig | None = None) -> CompiledStateGraph:
     Returns:
         Скомпилированный StateGraph
     """
-    from langgraph_app.agent.hybrid import create_hybrid_graph
+    from langgraph_app.agent.hybrid import create_hybrid_v2_graph
 
     logger.info(
         'graph_factory_hybrid',
         config_present=config is not None,
     )
 
-    graph = create_hybrid_graph(checkpointer=None)
+    graph = create_hybrid_v2_graph(checkpointer=None)
 
     return graph
 
@@ -138,15 +102,6 @@ def rag(config: RunnableConfig | None = None) -> CompiledStateGraph:
 _cached_graphs: dict[str, CompiledStateGraph] = {}
 
 
-def get_supervisor() -> CompiledStateGraph:
-    """
-    Возвращает кэшированный Supervisor Graph
-    """
-    if 'supervisor' not in _cached_graphs:
-        _cached_graphs['supervisor'] = supervisor()
-    return _cached_graphs['supervisor']
-
-
 def get_hybrid() -> CompiledStateGraph:
     """
     Возвращает кэшированный Hybrid Graph
@@ -175,10 +130,8 @@ def get_rag() -> CompiledStateGraph:
 #   "./app/graphs.py:rag"          → rag function
 
 __all__ = [
-    'supervisor',
     'hybrid',
     'rag',
-    'get_supervisor',
     'get_hybrid',
     'get_rag',
 ]
