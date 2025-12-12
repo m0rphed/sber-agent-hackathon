@@ -2,20 +2,263 @@
 Сервис геокодирования с fallback chain.
 
 Порядок попыток:
-1. YAZZH API (даёт building_id для дальнейших запросов)
-2. Yandex Geocoder (более точный для СПб)
-3. Nominatim/OSM (резервный вариант с кешем)
+1. Метро (статические данные) — если ввод похож на станцию
+2. YAZZH API (даёт building_id для дальнейших запросов)
+3. Yandex Geocoder (более точный для СПб)
+4. Nominatim/OSM (резервный вариант с кешем)
 
 Также поддерживает геокодирование станций метро по статическим данным.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 from langgraph_app.logging_config import get_logger
 
+from langgraph_app.config import DATA_DIR
+
+
 logger = get_logger(__name__)
 
+# ============================================================================
+# Список станций метро (контракт распознавания)
+# ============================================================================
 
+ADDRESS_MARKERS = (
+    'ул', 'улица',
+    'пр', 'проспект',
+    'пер', 'переулок',
+    'пл', 'площадь',
+    'наб', 'набережная',
+    'дом', 'д.', 'корп', 'к.',
+    'строение', 'стр',
+    'литер', 'лит',
+)
+
+SPB_METRO_STATIONS_2025_RU = [
+    # Линия 1 — Кировско-Выборгская (M1)
+    'Девяткино',
+    'Гражданский проспект',
+    'Академическая',
+    'Политехническая',
+    'Площадь Мужества',
+    'Лесная',
+    'Выборгская',
+    'Площадь Ленина',
+    'Чернышевская',
+    'Площадь Восстания',
+    'Владимирская',
+    'Пушкинская',
+    'Технологический институт 1',
+    'Балтийская',
+    'Нарвская',
+    'Кировский завод',
+    'Автово',
+    'Ленинский проспект',
+    'Проспект Ветеранов',
+    # Линия 2 — Московско-Петроградская (M2)
+    'Парнас',
+    'Проспект Просвещения',
+    'Озерки',
+    'Удельная',
+    'Пионерская',
+    'Чёрная речка',
+    'Петроградская',
+    'Горьковская',
+    'Невский проспект',
+    'Сенная площадь',
+    'Технологический институт 2',
+    'Фрунзенская',
+    'Московские ворота',
+    'Электросила',
+    'Парк Победы',
+    'Московская',
+    'Звёздная',
+    'Купчино',
+    # Линия 3 — Невско-Василеостровская (M3)
+    'Беговая',
+    'Зенит',
+    'Приморская',
+    'Василеостровская',
+    'Гостиный двор',
+    'Маяковская',
+    'Площадь Александра Невского 1',
+    'Елизаровская',
+    'Ломоносовская',
+    'Пролетарская',
+    'Обухово',
+    'Рыбацкое',
+    # Линия 4 — Лахтинско-Правобережная (M4)
+    'Горный институт',
+    'Спасская',
+    'Достоевская',
+    'Лиговский проспект',
+    'Площадь Александра Невского 2',
+    'Новочеркасская',
+    'Ладожская',
+    'Проспект Большевиков',
+    'Улица Дыбенко',
+    # Линия 5 — Фрунзенско-Приморская (M5)
+    'Комендантский проспект',
+    'Старая Деревня',
+    'Крестовский остров',
+    'Чкаловская',
+    'Спортивная',
+    'Адмиралтейская',
+    'Садовая',
+    'Звенигородская',
+    'Обводный канал',
+    'Волковская',
+    'Бухарестская',
+    'Международная',
+    'Проспект Славы',
+    'Дунайская',
+    'Шушары',
+]
+
+# ============================================================================
+# Метро: загрузка JSON и индексы
+# ============================================================================
+_METRO_CACHE: list[dict] | None = None
+_METRO_BY_NAME_NORM: dict[str, dict] | None = None
+_METRO_INDEX: dict[str, str] | None = None
+
+
+def _load_metro_data() -> list[dict]:
+    """
+    Загружает JSON со статикой метро (coords/address/line/closed) и кеширует в памяти.
+    """
+    global _METRO_CACHE
+    if _METRO_CACHE is None:
+        path = Path('./data/spb_metro.json')
+        with path.open(encoding='utf-8') as f:
+            _METRO_CACHE = json.load(f)
+    return _METRO_CACHE
+
+def looks_like_address(text: str) -> bool:
+    t = normalize_text(text)
+
+    # есть цифры → почти всегда адрес
+    if any(ch.isdigit() for ch in t):
+        return True
+
+    # есть адресные маркеры
+    for kw in ADDRESS_MARKERS:
+        if kw in t:
+            return True
+
+    return False
+
+
+def normalize_text(s: str) -> str:
+    """
+    Единая нормализация текста для сопоставления:
+    - lower
+    - ё->е
+    - убираем слова-индикаторы метро
+    - сжимаем пробелы
+    """
+    s = s.lower().replace('ё', 'е')
+    for kw in ('метро', 'м.', 'станция'):
+        s = s.replace(kw, ' ')
+    s = ' '.join(s.split())
+    return s.strip()
+
+
+def _build_metro_indexes() -> None:
+    """
+    Строит индексы:
+    - _METRO_INDEX: нормализованное имя -> каноническое имя из списка станций
+    - _METRO_BY_NAME_NORM: нормализованное имя -> запись из JSON (coords/address/closed)
+    """
+    global _METRO_INDEX, _METRO_BY_NAME_NORM
+
+    if _METRO_INDEX is None:
+        _METRO_INDEX = {normalize_text(name): name for name in SPB_METRO_STATIONS_2025_RU}
+
+    if _METRO_BY_NAME_NORM is None:
+        by_name: dict[str, dict] = {}
+        for item in _load_metro_data():
+            name = item.get('metro_name', '')
+            if not name:
+                continue
+            by_name[normalize_text(name)] = item
+        _METRO_BY_NAME_NORM = by_name
+
+
+def extract_metro_station(address: str) -> str | None:
+    """
+    Определяет станцию метро ТОЛЬКО если запрос действительно про метро.
+    """
+    _build_metro_indexes()
+
+    q_raw = address
+    q = normalize_text(address)
+
+    if not q:
+        return None
+
+    # ⛔ если это похоже на адрес — НЕ метро
+    if looks_like_address(q_raw):
+        return None
+
+    # 1) точное совпадение
+    if q in _METRO_INDEX:
+        return _METRO_INDEX[q]
+
+    # 2) частичное совпадение (короткий запрос)
+    if len(q.split()) <= 2:
+        for key, original in _METRO_INDEX.items():
+            if q == key or q in key:
+                return original
+
+    return None
+
+
+
+def geocode_metro_candidates(query: str) -> list['GeocodingResult']:
+    """
+    Возвращает список кандидатов метро на основе:
+    - извлечённой станции по списку
+    - данных из JSON (coords/address)
+    """
+    _build_metro_indexes()
+
+    station = extract_metro_station(query)
+    if not station:
+        return []
+
+    # пытаемся взять точную запись из JSON по нормализованному имени станции
+    item = _METRO_BY_NAME_NORM.get(normalize_text(station)) if _METRO_BY_NAME_NORM else None
+    if not item:
+        return []
+
+    if item.get('is_closed'):
+        return []
+
+    coords = item.get('coords')
+    if not coords or len(coords) != 2:
+        return []
+
+    lat, lon = coords
+
+    return [
+        GeocodingResult(
+            lat=float(lat),
+            lon=float(lon),
+            address=f'м. {item.get("metro_name", station)}',
+            source='metro_static',
+            district=None,
+        )
+    ]
+
+
+# ============================================================================
+# Модель результата
+# ============================================================================
 @dataclass
 class GeocodingResult:
     """
@@ -29,7 +272,6 @@ class GeocodingResult:
         building_id: ID здания в YAZZH API (только для source="yazzh")
         district: Район (если известен)
     """
-
     lat: float
     lon: float
     address: str
@@ -38,53 +280,18 @@ class GeocodingResult:
     district: str | None = None
 
 
-async def geocode_metro_station(station_name: str) -> GeocodingResult | None:
-    """
-    Геокодирует станцию метро по статическим данным.
-
-    Args:
-        station_name: Название станции (например: "Невский проспект", "Площадь Восстания")
-
-    Returns:
-        GeocodingResult или None если станция не найдена
-    """
-    from langgraph_app.api.geo.geocoding import spb_metro_station_to_coords
-
-    try:
-        coords = await spb_metro_station_to_coords(station_name)
-        if coords:
-            lat, lon = coords
-            return GeocodingResult(
-                lat=lat,
-                lon=lon,
-                address=f'м. {station_name}',
-                source='metro_static',
-            )
-    except Exception as e:
-        logger.warning('metro_geocoding_failed', station=station_name, error=str(e))
-
-    return None
-
-
+# ============================================================================
+# Геокодеры (источники)
+# ============================================================================
 async def geocode_with_yazzh(address: str, limit: int = 5) -> list[GeocodingResult]:
     """
     Геокодирует адрес через YAZZH API.
-
-    Преимущество: возвращает building_id, который можно использовать
-    для получения детальной информации о здании.
-
-    Args:
-        address: Адрес для поиска
-        limit: Максимальное количество результатов
-
-    Returns:
-        Список результатов (может быть пустым)
     """
-    from langgraph_app.api.yazzh_new import AddressNotFoundError, YazzhAsyncClient
+    from langgraph_app.api.yazzh_final import AddressNotFoundError, ApiClientUnified
 
     try:
-        async with YazzhAsyncClient() as client:
-            buildings = await client.search_building(address, count=limit)
+        async with ApiClientUnified() as client:
+            buildings = await client.search_building_full_text_search(query = address, count=limit)
 
             return [
                 GeocodingResult(
@@ -108,12 +315,6 @@ async def geocode_with_yazzh(address: str, limit: int = 5) -> list[GeocodingResu
 async def geocode_with_yandex(address: str) -> GeocodingResult | None:
     """
     Геокодирует адрес через Yandex Geocoder API.
-
-    Args:
-        address: Адрес для поиска
-
-    Returns:
-        GeocodingResult или None
     """
     from langgraph_app.api.geo.geocoding import address_to_coords_yandex
 
@@ -124,9 +325,7 @@ async def geocode_with_yandex(address: str) -> GeocodingResult | None:
             return GeocodingResult(
                 lat=lat,
                 lon=lon,
-                # геокодер yandex не возвращает нормализованный адрес в этой функции
-                # TODO: вообще-то яндекс может возвращать нормализованный адрес, просто мы его не извлекаем - поправить
-                address=address,
+                address=address,  # TODO: при желании извлекать нормализованный адрес из ответа Yandex
                 source='yandex',
             )
     except Exception as e:
@@ -138,14 +337,6 @@ async def geocode_with_yandex(address: str) -> GeocodingResult | None:
 def geocode_with_nominatim(address: str) -> GeocodingResult | None:
     """
     Геокодирует адрес через Nominatim (OSM) с кешированием.
-
-    Синхронная функция (использует osmnx под капотом).
-
-    Args:
-        address: Адрес для поиска
-
-    Returns:
-        GeocodingResult или None
     """
     from langgraph_app.api.geo.geocoding import geocode_with_cache
 
@@ -165,60 +356,39 @@ def geocode_with_nominatim(address: str) -> GeocodingResult | None:
     return None
 
 
+# ============================================================================
+# High-level API
+# ============================================================================
 async def geocode_address(
     address: str,
     prefer_yazzh: bool = True,
     include_metro: bool = True,
 ) -> GeocodingResult | None:
     """
-    Главная функция геокодирования с fallback chain.
-
-    Порядок попыток:
-    1. Если include_metro и похоже на метро — статические данные метро
-    2. Если prefer_yazzh — YAZZH API (возвращает первый результат)
-    3. Yandex Geocoder
-    4. Nominatim (OSM)
-
-    Args:
-        address: Адрес или название станции метро
-        prefer_yazzh: Начинать с YAZZH API (даёт building_id)
-        include_metro: Проверять станции метро
-
-    Returns:
-        GeocodingResult или None если не найден
+    Главная функция геокодирования: возвращает один лучший результат.
     """
-    address_lower = address.lower()
-
-    # 1. проверяем, не станция ли это метро
+    # 1) метро (по списку станций + JSON)
     if include_metro:
-        metro_keywords = ['метро', 'м.', 'станция']
-        is_metro = any(kw in address_lower for kw in metro_keywords)
+        metro_results = geocode_metro_candidates(address)
+        if metro_results:
+            station = extract_metro_station(address) or address
+            logger.info('geocoded_via_metro', station=station)
+            return metro_results[0]
 
-        if is_metro:
-            # убираем ключевые слова и пробуем найти станцию
-            station_name = address
-            for kw in metro_keywords:
-                station_name = station_name.lower().replace(kw, '').strip()
-
-            result = await geocode_metro_station(station_name)
-            if result:
-                logger.info('geocoded_via_metro', station=station_name)
-                return result
-
-    # 2. yazzh - "Я Здесь Живу" API
+    # 2) yazzh
     if prefer_yazzh:
         results = await geocode_with_yazzh(address, limit=1)
         if results:
             logger.info('geocoded_via_yazzh', address=address)
             return results[0]
 
-    # 3. yandex geocoder
+    # 3) yandex
     result = await geocode_with_yandex(address)
     if result:
         logger.info('geocoded_via_yandex', address=address)
         return result
 
-    # 4. nominatim (синхронный fallback)
+    # 4) nominatim
     result = geocode_with_nominatim(address)
     if result:
         logger.info('geocoded_via_nominatim', address=address)
@@ -233,29 +403,25 @@ async def geocode_address_with_candidates(
     limit: int = 5,
 ) -> list[GeocodingResult]:
     """
-    Геокодирует адрес и возвращает список кандидатов.
-
-    Используется для валидации адреса с показом вариантов пользователю.
-
-    Args:
-        address: Адрес для поиска
-        limit: Максимальное количество кандидатов
-
-    Returns:
-        Список GeocodingResult (может быть пустым)
+    Геокодирует адрес и возвращает список кандидатов (для валидации).
     """
-    # сначала пробуем "Я Здесь Живу API" (yazzh) — он возвращает несколько результатов
-    results = await geocode_with_yazzh(address, limit=limit)
+    # 1) метро — кандидаты
+    metro_results = geocode_metro_candidates(address)
+    if metro_results:
+        logger.info('geocoded_candidates_via_metro', address=address, count=len(metro_results))
+        return metro_results[:limit]
 
+    # 2) yazzh — несколько кандидатов
+    results = await geocode_with_yazzh(address, limit=limit)
     if results:
         return results
 
-    # fallback на Yandex (только один результат)
+    # 3) yandex — один кандидат
     yandex_result = await geocode_with_yandex(address)
     if yandex_result:
         return [yandex_result]
 
-    # fallback на Nominatim (только один результат)
+    # 4) nominatim — один кандидат
     nominatim_result = geocode_with_nominatim(address)
     if nominatim_result:
         return [nominatim_result]
