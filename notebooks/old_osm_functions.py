@@ -7,6 +7,7 @@
 - координаты маршрута (для интерактивной карты / фронтенда)
 - кеш графов OSM на диске (graphml + gpickle) и в памяти процесса
 """
+
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
