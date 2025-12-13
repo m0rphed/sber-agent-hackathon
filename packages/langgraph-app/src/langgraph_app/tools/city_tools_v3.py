@@ -624,7 +624,7 @@ async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0) -> str:
     """
     logger.info('tool_call', tool='get_pet_parks', lat=lat, lon=lon, radius_km=radius_km)
 
-    from langgraph_app.tools.formatters import format_pet_parks_list
+    from langgraph_app.tools.formatters_v2 import format_pet_parks_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_pet_parks(lat=lat, lon=lon, radius_km=int(radius_km))
@@ -653,7 +653,7 @@ async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0) -> st
     """
     logger.info('tool_call', tool='get_vet_clinics', lat=lat, lon=lon, radius_km=radius_km)
 
-    from langgraph_app.tools.formatters import format_vet_clinics_list
+    from langgraph_app.tools.formatters_v2 import format_vet_clinics_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_vet_clinics(lat=lat, lon=lon, radius_km=int(radius_km))
@@ -682,7 +682,7 @@ async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0) -> s
     """
     logger.info('tool_call', tool='get_pet_shelters', lat=lat, lon=lon, radius_km=radius_km)
 
-    from langgraph_app.tools.formatters import format_shelters_list
+    from langgraph_app.tools.formatters_v2 import format_shelters_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_mypets_shelters(lat=lat, lon=lon, radius_km=int(radius_km))
@@ -724,7 +724,7 @@ async def get_city_events(
 
     from datetime import datetime, timedelta
 
-    from langgraph_app.tools.formatters import format_events_list
+    from langgraph_app.tools.formatters_v2 import format_events_list
 
     start_date = datetime.now()
     end_date = start_date + timedelta(days=30)
@@ -762,7 +762,7 @@ async def get_sport_events(district: str, count: int = 5) -> str:
     """
     logger.info('tool_call', tool='get_sport_events', district=district)
 
-    from langgraph_app.tools.formatters import format_sport_events_list
+    from langgraph_app.tools.formatters_v2 import format_sport_events_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_sport_events(district=district, count=count)
@@ -797,7 +797,7 @@ async def get_pensioner_services(district: str, count: int = 5) -> str:
     """
     logger.info('tool_call', tool='get_pensioner_services', district=district)
 
-    from langgraph_app.tools.formatters import format_pensioner_services_list
+    from langgraph_app.tools.formatters_v2 import format_pensioner_services_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_pensioner_services(district=district, count=count)
@@ -865,7 +865,7 @@ async def get_sportgrounds(district: str, count: int = 5) -> str:
     """
     logger.info('tool_call', tool='get_sportgrounds', district=district)
 
-    from langgraph_app.tools.formatters import format_sportgrounds_list
+    from langgraph_app.tools.formatters_v2 import format_sportgrounds_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_sportgrounds(district=district, count=count)
@@ -898,7 +898,7 @@ async def get_beautiful_places(district: str, count: int = 5) -> str:
     """
     logger.info('tool_call', tool='get_beautiful_places', district=district)
 
-    from langgraph_app.tools.formatters import format_beautiful_places_list
+    from langgraph_app.tools.formatters_v2 import format_beautiful_places_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_beautiful_places(district=district, count=count)
@@ -969,7 +969,7 @@ async def get_recycling_points(lat: float, lon: float, count: int = 5) -> str:
     """
     logger.info('tool_call', tool='get_recycling_points', lat=lat, lon=lon)
 
-    from langgraph_app.tools.formatters import format_recycling_by_category
+    from langgraph_app.tools.formatters_v2 import format_recycling_by_category
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_recycling_nearest(lat=lat, lon=lon, count=count)
@@ -1002,7 +1002,7 @@ async def get_disconnections(building_id: int) -> str:
     """
     logger.info('tool_call', tool='get_disconnections', building_id=building_id)
 
-    from langgraph_app.tools.formatters import format_disconnections_list
+    from langgraph_app.tools.formatters_v2 import format_disconnections_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_disconnections(building_id=str(building_id))
@@ -1031,7 +1031,7 @@ async def get_road_works(district: str, count: int = 10) -> str:
     """
     logger.info('tool_call', tool='get_road_works', district=district)
 
-    from langgraph_app.tools.formatters import format_road_works_list
+    from langgraph_app.tools.formatters_v2 import format_road_works_list
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_gati_orders_map(district=district, count=count)

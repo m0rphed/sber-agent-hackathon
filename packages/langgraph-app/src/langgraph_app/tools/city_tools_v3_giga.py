@@ -232,8 +232,8 @@ async def get_district_info_by_address(address: str) -> str:
 # =============================================================================
 
 
-def _format_mfc_list(data: Any) -> str:
-    """Форматировать список МФЦ для чата."""
+def _format_mfc_list(data: Any, limit: int = 10, offset: int = 0) -> str:
+    """Форматировать список МФЦ для чата с пагинацией."""
     if not data:
         return 'МФЦ не найдены.'
 
@@ -242,26 +242,41 @@ def _format_mfc_list(data: Any) -> str:
     if not mfc_list:
         return 'МФЦ не найдены.'
 
+    total = len(mfc_list)
+    paginated = mfc_list[offset : offset + limit]
+
+    if not paginated:
+        return f'МФЦ не найдены (offset={offset} выходит за пределы списка из {total} элементов).'
+
     lines = []
-    for mfc in mfc_list[:5]:
+    for i, mfc in enumerate(paginated, start=offset + 1):
         if isinstance(mfc, dict):
             name = mfc.get('name') or mfc.get('title') or 'МФЦ'
             address = mfc.get('address') or mfc.get('full_address') or ''
             phone = mfc.get('phone') or mfc.get('phones') or ''
             schedule = mfc.get('schedule') or mfc.get('work_time') or ''
+            district = mfc.get('district') or ''
 
-            lines.append(f'📋 **{name}**')
+            lines.append(f'{i}. 🏛️ **{name}**')
             if address:
                 lines.append(f'   📍 {address}')
+            if district:
+                lines.append(f'   🏘️ Район: {district}')
             if phone:
                 lines.append(f'   📞 {phone}')
             if schedule:
                 lines.append(f'   🕐 {schedule}')
-            lines.append('')
         else:
-            lines.append(str(mfc))
+            lines.append(f'{i}. {mfc}')
 
-    return '\n'.join(lines) if lines else 'МФЦ не найдены.'
+    # Информация о пагинации
+    shown_end = offset + len(paginated)
+    lines.append(f'\n📊 Показано {offset + 1}-{shown_end} из {total}')
+    if shown_end < total:
+        remaining = total - shown_end
+        lines.append(f'💡 Ещё {remaining} МФЦ. Используйте offset={shown_end} для следующих.')
+
+    return '\n'.join(lines)
 
 
 @giga_tool(
@@ -272,10 +287,14 @@ def _format_mfc_list(data: Any) -> str:
             'request': 'Найди МФЦ около моего дома на Большевиков 68',
             'params': {'address': 'Большевиков 68'},
         },
+        {
+            'request': 'Покажи все МФЦ рядом с Невским 10',
+            'params': {'address': 'Невский 10', 'limit': 20},
+        },
     ]
 )
 @handle_api_errors
-async def find_nearest_mfc(address: str) -> str:
+async def find_nearest_mfc(address: str, limit: int = 5, offset: int = 0) -> str:
     """
     Найти ближайший МФЦ по адресу.
 
@@ -283,11 +302,16 @@ async def find_nearest_mfc(address: str) -> str:
 
     Args:
         address: Адрес для поиска (улица + дом). Примеры: "Невский 10", "Садовая 50"
+        limit: Максимальное количество МФЦ в ответе (по умолчанию 5, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Информация о ближайших МФЦ
     """
-    logger.info('tool_call', tool='find_nearest_mfc', address=address)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='find_nearest_mfc', address=address, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_mfc_nearest_by_coords(address_query=address, distance_km=5)
@@ -300,7 +324,7 @@ async def find_nearest_mfc(address: str) -> str:
         if not data:
             return f"МФЦ рядом с адресом '{address}' не найдены."
 
-        return _format_mfc_list(data)
+        return _format_mfc_list(data, limit=limit, offset=offset)
 
 
 @giga_tool(
@@ -308,10 +332,11 @@ async def find_nearest_mfc(address: str) -> str:
         {'request': 'МФЦ в Невском районе', 'params': {'district': 'Невский'}},
         {'request': 'Какие МФЦ есть в Центральном районе?', 'params': {'district': 'Центральный'}},
         {'request': 'Список МФЦ Приморского района', 'params': {'district': 'Приморский'}},
+        {'request': 'Все МФЦ Невского района', 'params': {'district': 'Невский', 'limit': 30}},
     ]
 )
 @handle_api_errors
-async def get_mfc_by_district(district: str) -> str:
+async def get_mfc_by_district(district: str, limit: int = 10, offset: int = 0) -> str:
     """
     Получить список МФЦ в районе.
 
@@ -320,11 +345,15 @@ async def get_mfc_by_district(district: str) -> str:
 
     Args:
         district: Название РАЙОНА (не адрес!). Примеры: "Невский", "Центральный"
+        limit: Максимальное количество МФЦ в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список МФЦ в указанном районе
     """
-    logger.info('tool_call', tool='get_mfc_by_district', district=district)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+    logger.info('tool_call', tool='get_mfc_by_district', district=district, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_mfc_by_district(district=district)
@@ -333,7 +362,7 @@ async def get_mfc_by_district(district: str) -> str:
         if not data:
             return f"МФЦ в районе '{district}' не найдены."
 
-        return _format_mfc_list(data)
+        return _format_mfc_list(data, limit=limit, offset=offset)
 
 
 @giga_tool(
@@ -380,8 +409,8 @@ async def get_all_mfc() -> str:
 # =============================================================================
 
 
-def _format_polyclinics(data: Any) -> str:
-    """Форматировать список поликлиник для чата."""
+def _format_polyclinics(data: Any, limit: int = 10, offset: int = 0) -> str:
+    """Форматировать список поликлиник для чата с пагинацией."""
     if not data:
         return 'Поликлиники не найдены.'
 
@@ -390,26 +419,41 @@ def _format_polyclinics(data: Any) -> str:
     if not clinics:
         return 'Поликлиники не найдены.'
 
+    total = len(clinics)
+    paginated = clinics[offset : offset + limit]
+
+    if not paginated:
+        return f'Поликлиники не найдены (offset={offset} выходит за пределы списка из {total} элементов).'
+
     lines = []
-    for clinic in clinics[:5]:
+    for i, clinic in enumerate(paginated, start=offset + 1):
         if isinstance(clinic, dict):
             name = clinic.get('name') or clinic.get('title') or 'Поликлиника'
             address = clinic.get('address') or clinic.get('full_address') or ''
             phone = clinic.get('phone') or clinic.get('phones') or ''
             clinic_type = clinic.get('type') or clinic.get('clinic_type') or ''
+            district = clinic.get('district') or ''
 
-            lines.append(f'🏥 **{name}**')
+            lines.append(f'{i}. 🏥 **{name}**')
             if clinic_type:
-                lines.append(f'   Тип: {clinic_type}')
+                lines.append(f'   📋 Тип: {clinic_type}')
             if address:
                 lines.append(f'   📍 {address}')
+            if district:
+                lines.append(f'   🏘️ Район: {district}')
             if phone:
                 lines.append(f'   📞 {phone}')
-            lines.append('')
         else:
-            lines.append(str(clinic))
+            lines.append(f'{i}. {clinic}')
 
-    return '\n'.join(lines) if lines else 'Поликлиники не найдены.'
+    # Информация о пагинации
+    shown_end = offset + len(paginated)
+    lines.append(f'\n📊 Показано {offset + 1}-{shown_end} из {total}')
+    if shown_end < total:
+        remaining = total - shown_end
+        lines.append(f'💡 Ещё {remaining} поликлиник. Используйте offset={shown_end} для следующих.')
+
+    return '\n'.join(lines)
 
 
 @giga_tool(
@@ -423,10 +467,14 @@ def _format_polyclinics(data: Any) -> str:
             'request': 'Моя поликлиника, живу на Большевиков 68',
             'params': {'address': 'Большевиков 68'},
         },
+        {
+            'request': 'Покажи все поликлиники для адреса Невский 10',
+            'params': {'address': 'Невский 10', 'limit': 20},
+        },
     ]
 )
 @handle_api_errors
-async def get_polyclinics_by_address(address: str) -> str:
+async def get_polyclinics_by_address(address: str, limit: int = 5, offset: int = 0) -> str:
     """
     Найти поликлиники, к которым прикреплён адрес.
 
@@ -434,11 +482,16 @@ async def get_polyclinics_by_address(address: str) -> str:
 
     Args:
         address: Адрес прописки (улица + дом). Примеры: "Невский 10", "Садовая 50"
+        limit: Максимальное количество поликлиник в ответе (по умолчанию 5, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список поликлиник, к которым прикреплён дом
     """
-    logger.info('tool_call', tool='get_polyclinics_by_address', address=address)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_polyclinics_by_address', address=address, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_polyclinics_by_building(address_query=address)
@@ -447,7 +500,7 @@ async def get_polyclinics_by_address(address: str) -> str:
         if not data:
             return f"Поликлиники для адреса '{address}' не найдены."
 
-        return _format_polyclinics(data)
+        return _format_polyclinics(data, limit=limit, offset=offset)
 
 
 # =============================================================================
@@ -455,8 +508,8 @@ async def get_polyclinics_by_address(address: str) -> str:
 # =============================================================================
 
 
-def _format_schools(data: Any) -> str:
-    """Форматировать список школ для чата."""
+def _format_schools(data: Any, limit: int = 10, offset: int = 0) -> str:
+    """Форматировать список школ для чата с пагинацией."""
     if not data:
         return 'Школы не найдены.'
 
@@ -465,26 +518,41 @@ def _format_schools(data: Any) -> str:
     if not schools:
         return 'Школы не найдены.'
 
+    total = len(schools)
+    paginated = schools[offset : offset + limit]
+
+    if not paginated:
+        return f'Школы не найдены (offset={offset} выходит за пределы списка из {total} элементов).'
+
     lines = []
-    for school in schools[:5]:
+    for i, school in enumerate(paginated, start=offset + 1):
         if isinstance(school, dict):
             name = school.get('name') or school.get('title') or school.get('short_name') or 'Школа'
             address = school.get('address') or school.get('full_address') or ''
             phone = school.get('phone') or school.get('phones') or ''
             school_type = school.get('type') or school.get('org_type') or ''
+            district = school.get('district') or ''
 
-            lines.append(f'🏫 **{name}**')
+            lines.append(f'{i}. 🏫 **{name}**')
             if school_type:
-                lines.append(f'   Тип: {school_type}')
+                lines.append(f'   📋 Тип: {school_type}')
             if address:
                 lines.append(f'   📍 {address}')
+            if district:
+                lines.append(f'   🏘️ Район: {district}')
             if phone:
                 lines.append(f'   📞 {phone}')
-            lines.append('')
         else:
-            lines.append(str(school))
+            lines.append(f'{i}. {school}')
 
-    return '\n'.join(lines) if lines else 'Школы не найдены.'
+    # Информация о пагинации
+    shown_end = offset + len(paginated)
+    lines.append(f'\n📊 Показано {offset + 1}-{shown_end} из {total}')
+    if shown_end < total:
+        remaining = total - shown_end
+        lines.append(f'💡 Ещё {remaining} школ. Используйте offset={shown_end} для следующих.')
+
+    return '\n'.join(lines)
 
 
 @giga_tool(
@@ -498,10 +566,14 @@ def _format_schools(data: Any) -> str:
             'request': 'В какую школу идти ребёнку, живём на Большевиков 68',
             'params': {'address': 'Большевиков 68'},
         },
+        {
+            'request': 'Покажи все школы для адреса Невский 10',
+            'params': {'address': 'Невский 10', 'limit': 20},
+        },
     ]
 )
 @handle_api_errors
-async def get_schools_by_address(address: str) -> str:
+async def get_schools_by_address(address: str, limit: int = 5, offset: int = 0) -> str:
     """
     Найти школы, к которым прикреплён адрес по месту прописки.
 
@@ -509,11 +581,16 @@ async def get_schools_by_address(address: str) -> str:
 
     Args:
         address: Адрес прописки (улица + дом). Примеры: "Невский 10", "Садовая 50"
+        limit: Максимальное количество школ в ответе (по умолчанию 5, максимум 50)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список школ, к которым прикреплён дом
     """
-    logger.info('tool_call', tool='get_schools_by_address', address=address)
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_schools_by_address', address=address, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_linked_schools(address_query=address)
@@ -522,7 +599,7 @@ async def get_schools_by_address(address: str) -> str:
         if not data:
             return f"Школы для адреса '{address}' не найдены."
 
-        return _format_schools(data)
+        return _format_schools(data, limit=limit, offset=offset)
 
 
 @giga_tool(
@@ -533,10 +610,11 @@ async def get_schools_by_address(address: str) -> str:
             'params': {'district': 'Центральный'},
         },
         {'request': 'Список школ Приморского района', 'params': {'district': 'Приморский'}},
+        {'request': 'Все школы Невского района', 'params': {'district': 'Невский', 'limit': 50}},
     ]
 )
 @handle_api_errors
-async def get_schools_in_district(district: str) -> str:
+async def get_schools_in_district(district: str, limit: int = 10, offset: int = 0) -> str:
     """
     Найти школы в районе.
 
@@ -545,11 +623,16 @@ async def get_schools_in_district(district: str) -> str:
 
     Args:
         district: Название РАЙОНА (не адрес!). Примеры: "Невский", "Центральный"
+        limit: Максимальное количество школ в ответе (по умолчанию 10, максимум 50)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список школ в указанном районе
     """
-    logger.info('tool_call', tool='get_schools_in_district', district=district)
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_schools_in_district', district=district, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_schools_map(district=district)
@@ -558,7 +641,7 @@ async def get_schools_in_district(district: str) -> str:
         if not data:
             return f"Школы в районе '{district}' не найдены."
 
-        return _format_schools(data)
+        return _format_schools(data, limit=limit, offset=offset)
 
 
 @giga_tool(
@@ -665,10 +748,14 @@ async def get_management_company(address: str) -> str:
             'request': 'Покажи все садики в Приморском районе',
             'params': {'district': 'Приморский', 'limit': 50},
         },
+        {
+            'request': 'Следующие 10 садов в Невском районе',
+            'params': {'district': 'Невский', 'offset': 10},
+        },
     ]
 )
 @handle_api_errors
-async def get_kindergartens_by_district(district: str, limit: int = 10) -> str:
+async def get_kindergartens_by_district(district: str, limit: int = 10, offset: int = 0) -> str:
     """
     Найти детские сады в районе.
 
@@ -677,14 +764,16 @@ async def get_kindergartens_by_district(district: str, limit: int = 10) -> str:
     Args:
         district: Название РАЙОНА (не адрес!). Примеры: "Невский", "Центральный"
         limit: Максимальное количество садов в ответе (по умолчанию 10, максимум 50)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список детских садов в указанном районе
     """
-    # Ограничиваем limit разумными значениями
+    # Ограничиваем limit и offset разумными значениями
     limit = max(1, min(limit, 50))
+    offset = max(0, offset)
 
-    logger.info('tool_call', tool='get_kindergartens_by_district', district=district, limit=limit)
+    logger.info('tool_call', tool='get_kindergartens_by_district', district=district, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_dou(district=district)
@@ -695,9 +784,13 @@ async def get_kindergartens_by_district(district: str, limit: int = 10) -> str:
 
         kinders = data if isinstance(data, list) else data.get('data') or [data]
         total = len(kinders)
+        paginated = kinders[offset : offset + limit]
 
-        lines = [f'👶 Детские сады в {district} районе ({total} шт.):\n']
-        for i, k in enumerate(kinders[:limit], 1):
+        if not paginated:
+            return f'Детские сады не найдены (offset={offset} выходит за пределы списка из {total} элементов).'
+
+        lines = [f'👶 Детские сады в {district} районе:\n']
+        for i, k in enumerate(paginated, start=offset + 1):
             if isinstance(k, dict):
                 # API возвращает doo_short, sum (свободные места), coordinates
                 name = k.get('doo_short') or k.get('name') or k.get('title') or 'Детский сад'
@@ -705,7 +798,7 @@ async def get_kindergartens_by_district(district: str, limit: int = 10) -> str:
                 status = k.get('doo_status')
                 building_id = k.get('building_id')
 
-                lines.append(f'{i}. **{name}**')
+                lines.append(f'{i}. 🏫 **{name}**')
                 if spots is not None:
                     lines.append(f'   🪑 Свободных мест: {spots}')
                 if status:
@@ -715,12 +808,14 @@ async def get_kindergartens_by_district(district: str, limit: int = 10) -> str:
             else:
                 lines.append(f'{i}. {k}')
 
-        if total > limit:
-            lines.append(
-                f'\n... и ещё {total - limit} садов (используй limit={total} для полного списка)'
-            )
+        # Информация о пагинации
+        shown_end = offset + len(paginated)
+        lines.append(f'\n📊 Показано {offset + 1}-{shown_end} из {total}')
+        if shown_end < total:
+            remaining = total - shown_end
+            lines.append(f'💡 Ещё {remaining} садов. Используйте offset={shown_end} для следующих.')
 
-        return '\n'.join(lines) if len(lines) > 1 else 'Детские сады не найдены.'
+        return '\n'.join(lines)
 
 
 # =============================================================================
@@ -738,10 +833,14 @@ async def get_kindergartens_by_district(district: str, limit: int = 10) -> str:
             'request': 'Площадки для собак около Невского',
             'params': {'lat': 59.9343, 'lon': 30.3351, 'radius_km': 5.0},
         },
+        {
+            'request': 'Покажи все площадки для собак',
+            'params': {'lat': 59.9343, 'lon': 30.3351, 'limit': 20},
+        },
     ]
 )
 @handle_api_errors
-async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0) -> str:
+async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0, limit: int = 10, offset: int = 0) -> str:
     """
     Найти площадки для выгула собак рядом с координатами.
 
@@ -749,13 +848,18 @@ async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0) -> str:
         lat: Широта (например: 59.9343)
         lon: Долгота (например: 30.3351)
         radius_km: Радиус поиска в километрах (по умолчанию 5)
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список площадок для выгула собак
     """
-    from langgraph_app.tools.formatters import format_pet_parks_list
+    from langgraph_app.tools.formatters_v2 import format_pet_parks_list
 
-    logger.info('tool_call', tool='get_pet_parks', lat=lat, lon=lon, radius_km=radius_km)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_pet_parks', lat=lat, lon=lon, radius_km=radius_km, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_pet_parks(lat=lat, lon=lon, radius_km=int(radius_km))
@@ -765,7 +869,7 @@ async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0) -> str:
             return 'Площадки для выгула не найдены.'
 
         parks = data.get('data', [])
-        return format_pet_parks_list(parks)
+        return format_pet_parks_list(parks, limit=limit, offset=offset)
 
 
 @giga_tool(
@@ -778,10 +882,14 @@ async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0) -> str:
             'request': 'Где ветклиника рядом?',
             'params': {'lat': 59.9343, 'lon': 30.3351, 'radius_km': 10.0},
         },
+        {
+            'request': 'Все ветклиники поблизости',
+            'params': {'lat': 59.9343, 'lon': 30.3351, 'limit': 20},
+        },
     ]
 )
 @handle_api_errors
-async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0) -> str:
+async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0, limit: int = 10, offset: int = 0) -> str:
     """
     Найти ближайшие ветеринарные клиники.
 
@@ -789,13 +897,18 @@ async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0) -> st
         lat: Широта
         lon: Долгота
         radius_km: Радиус поиска в километрах (по умолчанию 10)
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список ветеринарных клиник
     """
-    from langgraph_app.tools.formatters import format_vet_clinics_list
+    from langgraph_app.tools.formatters_v2 import format_vet_clinics_list
 
-    logger.info('tool_call', tool='get_vet_clinics', lat=lat, lon=lon, radius_km=radius_km)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_vet_clinics', lat=lat, lon=lon, radius_km=radius_km, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_vet_clinics(lat=lat, lon=lon, radius_km=int(radius_km))
@@ -805,7 +918,7 @@ async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0) -> st
             return 'Ветклиники не найдены.'
 
         clinics = data.get('data', [])
-        return format_vet_clinics_list(clinics)
+        return format_vet_clinics_list(clinics, limit=limit, offset=offset)
 
 
 @giga_tool(
@@ -818,10 +931,14 @@ async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0) -> st
             'request': 'Где приют для собак?',
             'params': {'lat': 59.9343, 'lon': 30.3351, 'radius_km': 10.0},
         },
+        {
+            'request': 'Все приюты в городе',
+            'params': {'lat': 59.9343, 'lon': 30.3351, 'limit': 20},
+        },
     ]
 )
 @handle_api_errors
-async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0) -> str:
+async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0, limit: int = 10, offset: int = 0) -> str:
     """
     Найти приюты для животных.
 
@@ -829,13 +946,18 @@ async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0) -> s
         lat: Широта
         lon: Долгота
         radius_km: Радиус поиска в километрах (по умолчанию 10)
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список приютов с информацией о посещении
     """
-    from langgraph_app.tools.formatters import format_shelters_list
+    from langgraph_app.tools.formatters_v2 import format_shelters_list
 
-    logger.info('tool_call', tool='get_pet_shelters', lat=lat, lon=lon, radius_km=radius_km)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_pet_shelters', lat=lat, lon=lon, radius_km=radius_km, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_mypets_shelters(lat=lat, lon=lon, radius_km=int(radius_km))
@@ -845,7 +967,7 @@ async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0) -> s
             return 'Приюты не найдены.'
 
         shelters = data.get('data', [])
-        return format_shelters_list(shelters)
+        return format_shelters_list(shelters, limit=limit, offset=offset)
 
 
 # =============================================================================
@@ -870,7 +992,8 @@ async def get_city_events(
     lat: float,
     lon: float,
     radius_km: float = 10.0,
-    count: int = 5,
+    limit: int = 10,
+    offset: int = 0,
 ) -> str:
     """
     Найти мероприятия в городе рядом с указанными координатами.
@@ -879,16 +1002,20 @@ async def get_city_events(
         lat: Широта
         lon: Долгота
         radius_km: Радиус поиска в километрах
-        count: Количество результатов (по умолчанию 5)
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список мероприятий с датами и местами проведения
     """
     from datetime import datetime, timedelta
 
-    from langgraph_app.tools.formatters import format_events_list
+    from langgraph_app.tools.formatters_v2 import format_events_list
 
-    logger.info('tool_call', tool='get_city_events', lat=lat, lon=lon)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_city_events', lat=lat, lon=lon, limit=limit, offset=offset)
 
     start_date = datetime.now()
     end_date = start_date + timedelta(days=30)
@@ -900,7 +1027,7 @@ async def get_city_events(
             lat=lat,
             lon=lon,
             radius_km=int(radius_km),
-            count=count,
+            count=100,  # запрашиваем больше для пагинации
         )
         data = _extract_json(result)
 
@@ -908,39 +1035,47 @@ async def get_city_events(
             return 'Мероприятия не найдены.'
 
         events = data.get('data', [])
-        return format_events_list(events)
+        return format_events_list(events, limit=limit, offset=offset)
 
 
 @giga_tool(
     few_shot_examples=[
         {
             'request': 'Спортивные соревнования в Невском районе',
-            'params': {'district': 'Невский', 'count': 5},
+            'params': {'district': 'Невский'},
         },
         {
             'request': 'Какие спортивные события в СПб?',
-            'params': {'district': 'Центральный', 'count': 5},
+            'params': {'district': 'Центральный'},
+        },
+        {
+            'request': 'Все спортивные мероприятия в Невском',
+            'params': {'district': 'Невский', 'limit': 20},
         },
     ]
 )
 @handle_api_errors
-async def get_sport_events(district: str, count: int = 5) -> str:
+async def get_sport_events(district: str, limit: int = 10, offset: int = 0) -> str:
     """
     Найти спортивные мероприятия в районе.
 
     Args:
         district: Название района (например: "Кировский", "Невский")
-        count: Количество результатов
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Список спортивных мероприятий
     """
-    from langgraph_app.tools.formatters import format_sport_events_list
+    from langgraph_app.tools.formatters_v2 import format_sport_events_list
 
-    logger.info('tool_call', tool='get_sport_events', district=district)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_sport_events', district=district, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
-        result = await client.get_sport_events(district=district, count=count)
+        result = await client.get_sport_events(district=district, count=100)  # запрашиваем больше
         data = _extract_json(result)
 
         if not data:
@@ -948,7 +1083,7 @@ async def get_sport_events(district: str, count: int = 5) -> str:
 
         inner = data.get('data', {})
         events = inner.get('data', []) if isinstance(inner, dict) else []
-        return format_sport_events_list(events)
+        return format_sport_events_list(events, limit=limit, offset=offset)
 
 
 # =============================================================================
@@ -977,7 +1112,7 @@ async def get_pensioner_services(district: str, count: int = 5) -> str:
     Returns:
         Список занятий (танцы, вокал, клубы по интересам и т.д.)
     """
-    from langgraph_app.tools.formatters import format_pensioner_services_list
+    from langgraph_app.tools.formatters_v2 import format_pensioner_services_list
 
     logger.info('tool_call', tool='get_pensioner_services', district=district)
 
@@ -1060,7 +1195,7 @@ async def get_sportgrounds(district: str, count: int = 5) -> str:
     Returns:
         Список спортплощадок с видами спорта
     """
-    from langgraph_app.tools.formatters import format_sportgrounds_list
+    from langgraph_app.tools.formatters_v2 import format_sportgrounds_list
 
     logger.info('tool_call', tool='get_sportgrounds', district=district)
 
@@ -1101,7 +1236,7 @@ async def get_beautiful_places(district: str, count: int = 5) -> str:
     Returns:
         Список достопримечательностей с описанием
     """
-    from langgraph_app.tools.formatters import format_beautiful_places_list
+    from langgraph_app.tools.formatters_v2 import format_beautiful_places_list
 
     logger.info('tool_call', tool='get_beautiful_places', district=district)
 
@@ -1188,7 +1323,7 @@ async def get_recycling_points(lat: float, lon: float, count: int = 5) -> str:
     Returns:
         Пункты приёма вторсырья по категориям
     """
-    from langgraph_app.tools.formatters import format_recycling_by_category
+    from langgraph_app.tools.formatters_v2 import format_recycling_by_category
 
     logger.info('tool_call', tool='get_recycling_points', lat=lat, lon=lon)
 
@@ -1212,22 +1347,28 @@ async def get_recycling_points(lat: float, lon: float, count: int = 5) -> str:
     few_shot_examples=[
         {'request': 'Отключения воды по зданию 12345', 'params': {'building_id': 12345}},
         {'request': 'Когда отключат отопление в моём доме?', 'params': {'building_id': 67890}},
+        {'request': 'Все отключения для дома', 'params': {'building_id': 12345, 'limit': 20}},
     ]
 )
 @handle_api_errors
-async def get_disconnections(building_id: int) -> str:
+async def get_disconnections(building_id: int, limit: int = 10, offset: int = 0) -> str:
     """
     Проверить отключения воды/электричества по зданию.
 
     Args:
         building_id: ID здания из системы YAZZH
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
 
     Returns:
         Информация об отключениях или "отключений нет"
     """
-    from langgraph_app.tools.formatters import format_disconnections_list
+    from langgraph_app.tools.formatters_v2 import format_disconnections_list
 
-    logger.info('tool_call', tool='get_disconnections', building_id=building_id)
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_disconnections', building_id=building_id, limit=limit, offset=offset)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_disconnections(building_id=str(building_id))
@@ -1237,7 +1378,7 @@ async def get_disconnections(building_id: int) -> str:
             return '✅ Отключений не запланировано. Всё работает!'
 
         discs = data if isinstance(data, list) else data.get('data', [])
-        return format_disconnections_list(discs)
+        return format_disconnections_list(discs, limit=limit, offset=offset)
 
 
 @giga_tool(
@@ -1261,7 +1402,7 @@ async def get_road_works(district: str, count: int = 10) -> str:
     Returns:
         Список дорожных работ по типам
     """
-    from langgraph_app.tools.formatters import format_road_works_list
+    from langgraph_app.tools.formatters_v2 import format_road_works_list
 
     logger.info('tool_call', tool='get_road_works', district=district)
 
