@@ -881,7 +881,7 @@ async def get_city_events(
     lat: float,
     lon: float,
     radius_km: float = 10.0,
-    count: int = 5,
+    count: int = 3,
 ) -> str:
     """
     Найти мероприятия в городе рядом с указанными координатами.
@@ -890,7 +890,7 @@ async def get_city_events(
         lat: Широта
         lon: Долгота
         radius_km: Радиус поиска в километрах
-        count: Количество результатов (по умолчанию 5)
+        count: Количество результатов (по умолчанию 3)
 
     Returns:
         Список мероприятий с датами и местами проведения
@@ -919,7 +919,7 @@ async def get_city_events(
             return 'Мероприятия не найдены.'
 
         events = data.get('data', [])
-        return format_events_list(events)
+        return format_events_list(events, limit=count)
 
 
 @tool
@@ -927,7 +927,7 @@ async def get_city_events(
 async def get_city_events_near(
     location: str,
     radius_km: float = 10.0,
-    count: int = 5,
+    count: int = 3,
 ) -> str:
     """
     Найти мероприятия в городе рядом с адресом или станцией метро.
@@ -938,7 +938,7 @@ async def get_city_events_near(
     Args:
         location: Адрес или станция метро. Примеры: "метро Невский", "Садовая 50"
         radius_km: Радиус поиска в километрах
-        count: Количество результатов (по умолчанию 5)
+        count: Количество результатов (по умолчанию 3)
 
     Returns:
         Список мероприятий с датами и местами проведения
@@ -971,19 +971,19 @@ async def get_city_events_near(
             return f'Мероприятия рядом с «{geo_result.address}» не найдены.'
 
         events = data.get('data', [])
-        formatted = format_events_list(events)
+        formatted = format_events_list(events, limit=count)
         return f'📍 Поиск от: {geo_result.address}\n\n{formatted}'
 
 
 @tool
 @handle_api_errors
-async def get_sport_events(district: str, count: int = 5) -> str:
+async def get_sport_events(district: str, count: int = 3) -> str:
     """
     Найти спортивные мероприятия в районе.
 
     Args:
         district: Название района (например: "Кировский", "Невский")
-        count: Количество результатов
+        count: Количество результатов (по умолчанию 3)
 
     Returns:
         Список спортивных мероприятий
@@ -1002,7 +1002,7 @@ async def get_sport_events(district: str, count: int = 5) -> str:
         # Структура: data.data.data (вложенность)
         inner = data.get('data', {})
         events = inner.get('data', []) if isinstance(inner, dict) else []
-        return format_sport_events_list(events)
+        return format_sport_events_list(events, limit=count)
 
 
 # =============================================================================

@@ -162,12 +162,13 @@ def _extract_agent_output(result: dict) -> str:
     return default_output
 
 
-def _validate_tool_output(output: str) -> str:
+def _validate_tool_output(output: str, max_length: int = 6000) -> str:
     """
     Проверяет и очищает output от tool.
 
     Args:
         output: Сырой output
+        max_length: Максимальная длина вывода (защита от переполнения контекста GigaChat)
 
     Returns:
         Валидированный output
@@ -188,5 +189,16 @@ def _validate_tool_output(output: str) -> str:
     for marker in error_markers:
         if marker in output:
             return 'Сервис временно недоступен. Попробуйте позже.'
+
+    # Защита от переполнения контекста GigaChat
+    if len(output) > max_length:
+        logger.warning('tool_output_truncated', original_len=len(output), max_len=max_length)
+        # Обрезаем и добавляем предупреждение
+        truncated = output[:max_length]
+        # Обрезаем до последнего полного элемента списка (по номеру или эмодзи)
+        last_item_marker = truncated.rfind('\n\n')
+        if last_item_marker > max_length // 2:
+            truncated = truncated[:last_item_marker]
+        output = truncated + '\n\n...и ещё результаты. Уточните запрос для более точного поиска.'
 
     return output

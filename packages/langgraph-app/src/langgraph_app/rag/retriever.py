@@ -13,15 +13,13 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from langchain_core.documents import Document
 
 from langgraph_app.logging_config import get_logger
 from langgraph_app.rag.config import RAGConfig, get_rag_config
-
-if TYPE_CHECKING:
-    from langgraph_app.rag.indexer import HybridIndexer
+from langgraph_app.rag.indexer import HybridIndexer
 
 logger = get_logger(__name__)
 

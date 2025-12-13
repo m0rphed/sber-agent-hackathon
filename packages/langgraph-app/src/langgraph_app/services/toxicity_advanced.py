@@ -6,17 +6,14 @@
 """
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
+
+from transformers import PreTrainedModel, PreTrainedTokenizer
 
 from langgraph_app.services.toxicity import (
     ToxicityFilter,
     ToxicityLevel,
     ToxicityResult,
 )
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedModel, PreTrainedTokenizer
-
 
 # пороги для определения уровня токсичности на основе ML-значения
 TOXICITY_THRESHOLDS = {

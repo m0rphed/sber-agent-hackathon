@@ -34,25 +34,15 @@ Hybrid Agent Graph V2 — с категориями и clarification loop.
 - Clarification loop для уточнения параметров
 - Address validation с показом кандидатов
 """
-
-from langgraph.graph import END, START, StateGraph
-
-from langgraph_app.agent.models import ToolCategory
-from langgraph_app.agent.state import create_ai_response
-from langgraph_app.agent.state_v2 import HybridStateV2
-from langgraph_app.logging_config import get_logger
-
-logger = get_logger(__name__)
-
-# Максимальное количество попыток уточнения перед fallback на RAG
-MAX_CLARIFICATION_ATTEMPTS = 2
-
 # =============================================================================
 # Import nodes
 # =============================================================================
 
 # Общие ноды (toxicity, rag, conversation, response)
 # Специализированные ноды для V2
+from langgraph.graph import END, START, StateGraph
+
+from langgraph_app.agent.models import ToolCategory
 from langgraph_app.agent.nodes.address_validator import validate_address_node
 from langgraph_app.agent.nodes.category_classifier import classify_category_node
 from langgraph_app.agent.nodes.common import (
@@ -64,6 +54,17 @@ from langgraph_app.agent.nodes.common import (
 )
 from langgraph_app.agent.nodes.slots_checker import check_slots_node
 from langgraph_app.agent.nodes.tool_executor import execute_tools_node
+from langgraph_app.agent.state import create_ai_response
+from langgraph_app.agent.state_v2 import HybridStateV2
+from langgraph_app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+# Максимальное количество попыток уточнения СЛОТОВ перед fallback на RAG
+MAX_CLARIFICATION_ATTEMPTS = 2
+
+# Максимальное количество попыток валидации АДРЕСА перед fallback на RAG
+MAX_ADDRESS_VALIDATION_ATTEMPTS = 2
 
 # =============================================================================
 # New nodes
@@ -78,24 +79,40 @@ def ask_clarification_node(state: HybridStateV2) -> dict:
     Пользователь должен ответить, и следующий run продолжит обработку.
 
     Также:
-    - Инкрементит счётчик попыток (clarification_attempts)
+    - Инкрементит ПРАВИЛЬНЫЙ счётчик в зависимости от типа уточнения:
+      - address → address_validation_attempts
+      - остальные → clarification_attempts
     - Добавляет контекст о том, что пытается сделать агент
     - При последней попытке предупреждает о fallback на общую информацию
     """
-    attempts = state.get('clarification_attempts', 0) + 1
+    clarification_type = state.get('clarification_type')
+    is_address_clarification = clarification_type in ('address', 'address_candidates', 'address_not_found')
+
+    # Выбираем правильный счётчик
+    if is_address_clarification:
+        attempts = state.get('address_validation_attempts', 0) + 1
+        max_attempts = MAX_ADDRESS_VALIDATION_ATTEMPTS
+    else:
+        attempts = state.get('clarification_attempts', 0) + 1
+        max_attempts = MAX_CLARIFICATION_ATTEMPTS
+
     base_question = state.get('clarification_question') or 'Уточните, пожалуйста, детали запроса.'
     category = state.get('category')
     missing = state.get('missing_params', [])
 
     # Формируем контекстное сообщение
     if attempts == 1:
-        # Первая попытка — объясняем что хотим сделать
+        # Первая попытка — объясняем что хотим сделать и какие параметры нужны
         context = _get_category_context(category)
-        if context and missing:
-            question = f'{context}\n\n{base_question}'
+        if context:
+            if missing:
+                missing_str = ', '.join(missing)
+                question = f'{context}\n\nНе хватает: {missing_str}.\n\n{base_question}'
+            else:
+                question = f'{context}\n\n{base_question}'
         else:
             question = base_question
-    elif attempts >= MAX_CLARIFICATION_ATTEMPTS:
+    elif attempts >= max_attempts:
         # Последняя попытка — предупреждаем о fallback
         question = (
             f'{base_question}\n\n'
@@ -107,19 +124,32 @@ def ask_clarification_node(state: HybridStateV2) -> dict:
 
     logger.info(
         'ask_clarification',
-        clarification_type=state.get('clarification_type'),
+        clarification_type=clarification_type,
         attempt=attempts,
-        max_attempts=MAX_CLARIFICATION_ATTEMPTS,
+        max_attempts=max_attempts,
+        is_address=is_address_clarification,
     )
 
-    return {
-        **create_ai_response(question),
-        'clarification_attempts': attempts,
-    }
+    # Возвращаем правильный счётчик
+    if is_address_clarification:
+        return {
+            **create_ai_response(question),
+            'address_validation_attempts': attempts,
+        }
+    else:
+        return {
+            **create_ai_response(question),
+            'clarification_attempts': attempts,
+        }
 
 
 def _get_category_context(category: ToolCategory | None) -> str:
-    """Возвращает объяснение, что пытается сделать агент для данной категории."""
+    """
+    Возвращает объяснение, что пытается сделать агент для данной категории.
+    """
+    if category is None:
+        return ''
+
     contexts = {
         ToolCategory.MFC: 'Чтобы найти ближайший МФЦ, мне нужно знать ваш адрес.',
         ToolCategory.POLYCLINIC: 'Чтобы найти поликлинику, обслуживающую ваш дом, мне нужен адрес.',
@@ -187,9 +217,26 @@ def slots_router(state: HybridStateV2) -> str:
 
 
 def address_router(state: HybridStateV2) -> str:
-    """Роутер после валидации адреса."""
+    """
+    Роутер после валидации адреса.
+
+    Защита от бесконечного цикла:
+    - После MAX_ADDRESS_VALIDATION_ATTEMPTS переключаемся на RAG
+    - Это отдельный счётчик от clarification_attempts (слоты)
+    """
     if state.get('address_validated', False):
         return 'execute'
+
+    # Защита от бесконечного цикла валидации адреса
+    attempts = state.get('address_validation_attempts', 0)
+    if attempts >= MAX_ADDRESS_VALIDATION_ATTEMPTS:
+        logger.warning(
+            'address_validation_limit_reached',
+            attempts=attempts,
+            address=state.get('extracted_address'),
+        )
+        return 'fallback_address'
+
     return 'clarify'
 
 
@@ -219,6 +266,34 @@ def fallback_rag_node(state: HybridStateV2) -> dict:
     return {
         'fallback_context': context_note,
         'clarification_attempts': 0,  # Сбрасываем счётчик
+    }
+
+
+def fallback_address_node(state: HybridStateV2) -> dict:
+    """
+    Fallback на RAG когда не удалось валидировать адрес после N попыток.
+
+    Отдельный от fallback_rag — объясняет проблему с адресом.
+    """
+    address = state.get('extracted_address')
+    attempts = state.get('address_validation_attempts', 0)
+
+    logger.info(
+        'fallback_address_to_rag',
+        address=address,
+        attempts=attempts,
+    )
+
+    # Объясняем пользователю ситуацию с адресом
+    context_note = (
+        f"К сожалению, мне не удалось найти адрес '{address}' в базе данных. "
+        f'Возможно, адрес указан неточно или отсутствует в системе. '
+        f'Вот общая информация по вашему вопросу:\n\n'
+    )
+
+    return {
+        'fallback_context': context_note,
+        'address_validation_attempts': 0,  # Сбрасываем счётчик
     }
 
 
@@ -276,6 +351,9 @@ def create_hybrid_v2_graph(checkpointer=None):
     # Fallback RAG (когда не удалось получить параметры)
     builder.add_node('fallback_rag', fallback_rag_node)
 
+    # Fallback для адреса (когда не удалось валидировать адрес)
+    builder.add_node('fallback_address', fallback_address_node)
+
     # Response generation (без retry)
     builder.add_node('generate_response', generate_response_node)
 
@@ -326,6 +404,7 @@ def create_hybrid_v2_graph(checkpointer=None):
         {
             'execute': 'execute_tools',
             'clarify': 'ask_clarification',
+            'fallback_address': 'fallback_address',
         },
     )
 
@@ -334,6 +413,9 @@ def create_hybrid_v2_graph(checkpointer=None):
 
     # Fallback RAG → обычный RAG поиск
     builder.add_edge('fallback_rag', 'rag_search')
+
+    # Fallback Address → обычный RAG поиск
+    builder.add_edge('fallback_address', 'rag_search')
 
     # Все пути сходятся в generate_response
     builder.add_edge('execute_tools', 'generate_response')

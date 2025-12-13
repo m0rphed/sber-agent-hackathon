@@ -14,13 +14,11 @@
     tools = get_tools_for_category(ToolCategory.MFC, provider="openrouter")
 """
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from langchain_core.tools import BaseTool
 
-if TYPE_CHECKING:
-    from langgraph_app.agent.models import ToolCategory
-
+from langgraph_app.agent.models import ToolCategory
 from langgraph_app.logging_config import get_logger
 
 logger = get_logger(__name__)

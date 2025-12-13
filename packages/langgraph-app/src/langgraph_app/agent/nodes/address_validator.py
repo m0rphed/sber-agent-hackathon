@@ -54,9 +54,12 @@ async def validate_address_node(state: HybridStateV2) -> dict[str, Any]:
     # Валидируем адрес через API
     candidates = await _search_address_candidates(address)
 
+    # Текущее количество попыток валидации адреса
+    attempts = state.get('address_validation_attempts', 0)
+
     if not candidates:
         # Адрес не найден — просим уточнить
-        logger.warning('address_not_found', address=address)
+        logger.warning('address_not_found', address=address, attempt=attempts + 1)
 
         # interrupt() приостанавливает граф и ждёт ответа
         # После resume пользователь должен указать новый адрес
@@ -70,15 +73,20 @@ async def validate_address_node(state: HybridStateV2) -> dict[str, Any]:
 
         # После resume — user_response содержит новый адрес
         if user_response:
-            # Рекурсивно проверяем новый адрес
+            # Рекурсивно проверяем новый адрес, инкрементируем счётчик
             return {
                 'extracted_address': str(user_response),
                 'address_validated': False,  # Требуется повторная валидация
+                'address_validation_attempts': attempts + 1,
             }
 
+        # Пользователь не дал ответ — инкрементируем счётчик
         return {
             'address_validated': False,
             'address_candidates': [],
+            'address_validation_attempts': attempts + 1,
+            'clarification_type': 'address_not_found',
+            'clarification_question': f"Адрес '{address}' не найден. Уточните, пожалуйста, адрес.",
         }
 
     if len(candidates) == 1:
@@ -132,9 +140,15 @@ async def validate_address_node(state: HybridStateV2) -> dict[str, Any]:
 
     # Не удалось распознать выбор — просим уточнить
     logger.warning('invalid_selection', user_input=user_selection)
+
+    # Формируем сообщение для ask_clarification
+    options_text = _format_candidates_message(candidates)
+
     return {
         'address_validated': False,
         'address_candidates': candidates,
+        'clarification_type': 'address_candidates',
+        'clarification_question': f'Не удалось распознать ваш выбор.\n\n{options_text}',
     }
 
 
@@ -201,8 +215,13 @@ def _parse_user_selection(user_input: Any, max_options: int) -> int | None:
     """
     Парсит выбор пользователя.
 
+    Поддерживает:
+    - 1-based индексы от пользователя (текст "1", "2", ...)
+    - 0-based индексы от UI (число 0, 1, 2, ...)
+    - Индексы в dict формате {'index': 0} от LangGraph Studio
+
     Args:
-        user_input: Ответ пользователя (строка или число)
+        user_input: Ответ пользователя (строка, число или dict)
         max_options: Максимальное количество вариантов
 
     Returns:
@@ -212,17 +231,34 @@ def _parse_user_selection(user_input: Any, max_options: int) -> int | None:
         return None
 
     try:
-        # Пробуем как число
-        if isinstance(user_input, int):
-            selection = user_input
-        else:
-            # Извлекаем первое число из строки
-            import re
-
-            match = re.search(r'\d+', str(user_input))
-            if not match:
+        # Если dict с index — берём напрямую (LangGraph Studio format)
+        if isinstance(user_input, dict):
+            if 'index' in user_input:
+                selection = int(user_input['index'])
+                # UI может передать 0-based или 1-based
+                if 0 <= selection < max_options:
+                    return selection  # Уже 0-based
+                if 1 <= selection <= max_options:
+                    return selection - 1  # 1-based → 0-based
                 return None
-            selection = int(match.group())
+
+        # Пробуем как число (от UI — может быть 0-based)
+        if isinstance(user_input, int):
+            # 0-based от UI
+            if 0 <= user_input < max_options:
+                return user_input
+            # 1-based от пользователя
+            if 1 <= user_input <= max_options:
+                return user_input - 1
+            return None
+
+        # Текстовый ввод от пользователя (всегда 1-based)
+        import re
+
+        match = re.search(r'\d+', str(user_input))
+        if not match:
+            return None
+        selection = int(match.group())
 
         # Валидируем диапазон (1-based → 0-based)
         if 1 <= selection <= max_options:

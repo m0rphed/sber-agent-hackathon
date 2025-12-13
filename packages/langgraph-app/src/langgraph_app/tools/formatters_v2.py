@@ -139,7 +139,7 @@ def format_mfc(mfc: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_mfc_list(mfc_list: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_mfc_list(mfc_list: list[dict], limit: int = 5, offset: int = 0) -> str:
     """
     Форматировать список МФЦ с пагинацией
     """
@@ -196,7 +196,7 @@ def format_polyclinic(poly: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_polyclinics_list(polys: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_polyclinics_list(polys: list[dict], limit: int = 5, offset: int = 0) -> str:
     """
     Форматировать список поликлиник с пагинацией
     """
@@ -259,7 +259,7 @@ def format_school(school: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_schools_list(schools: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_schools_list(schools: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список школ с пагинацией."""
     if not schools:
         return 'Школы не найдены.'
@@ -307,7 +307,7 @@ def format_kindergarten(kg: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_kindergartens_list(kgs: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_kindergartens_list(kgs: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список детских садов с пагинацией."""
     if not kgs:
         return 'Детские сады не найдены.'
@@ -402,7 +402,7 @@ def format_pet_park(park: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_pet_parks_list(parks: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_pet_parks_list(parks: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список площадок для выгула с пагинацией."""
     if not parks:
         return 'Площадки для выгула не найдены.'
@@ -447,7 +447,7 @@ def format_vet_clinic(clinic: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_vet_clinics_list(clinics: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_vet_clinics_list(clinics: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список ветклиник с пагинацией."""
     if not clinics:
         return 'Ветклиники не найдены.'
@@ -500,7 +500,7 @@ def format_shelter(shelter: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_shelters_list(shelters: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_shelters_list(shelters: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список приютов с пагинацией."""
     if not shelters:
         return 'Приюты не найдены.'
@@ -560,7 +560,7 @@ def format_event(event: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_events_list(events: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_events_list(events: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список мероприятий с пагинацией."""
     if not events:
         return 'Мероприятия не найдены.'
@@ -612,7 +612,7 @@ def format_sport_event(event: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_sport_events_list(events: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_sport_events_list(events: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список спортивных мероприятий с пагинацией."""
     if not events:
         return 'Спортивные мероприятия не найдены.'
@@ -661,7 +661,7 @@ def format_pensioner_service(service: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_pensioner_services_list(services: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_pensioner_services_list(services: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список услуг для пенсионеров с пагинацией."""
     if not services:
         return 'Услуги для пенсионеров не найдены.'
@@ -709,7 +709,7 @@ def format_sportground(ground: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_sportgrounds_list(grounds: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_sportgrounds_list(grounds: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список спортплощадок с пагинацией."""
     if not grounds:
         return 'Спортплощадки не найдены.'
@@ -761,7 +761,7 @@ def format_beautiful_place(place_data: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_beautiful_places_list(places: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_beautiful_places_list(places: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список достопримечательностей с пагинацией."""
     if not places:
         return 'Достопримечательности не найдены.'
@@ -858,7 +858,7 @@ def format_disconnection(disc: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_disconnections_list(discs: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_disconnections_list(discs: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список отключений с пагинацией."""
     if not discs:
         return 'Отключений не найдено. Всё работает! ✅'
@@ -895,7 +895,7 @@ def format_road_work(work: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_road_works_list(works: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_road_works_list(works: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список дорожных работ с пагинацией."""
     if not works:
         return 'Дорожных работ не найдено.'
@@ -936,7 +936,7 @@ def format_tourist_route(route: dict) -> str:
     return '\n'.join(lines)
 
 
-def format_tourist_routes_list(routes: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_tourist_routes_list(routes: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Форматировать список туристических маршрутов с пагинацией."""
     if not routes:
         return 'Туристические маршруты не найдены.'
@@ -982,7 +982,7 @@ def format_generic_item(item: dict, title_keys: list[str] | None = None) -> str:
     return '\n'.join(lines)
 
 
-def format_generic_list(items: list[dict], limit: int = 10, offset: int = 0) -> str:
+def format_generic_list(items: list[dict], limit: int = 5, offset: int = 0) -> str:
     """Универсальный форматтер для списков с пагинацией."""
     if not items:
         return 'Ничего не найдено.'

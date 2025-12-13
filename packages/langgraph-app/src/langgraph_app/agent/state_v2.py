@@ -128,8 +128,14 @@ class HybridStateV2(AgentState):
 
     clarification_attempts: int
     """
-    Счётчик попыток уточнения для защиты от бесконечного цикла.
+    Счётчик попыток уточнения СЛОТОВ (параметров) для защиты от бесконечного цикла.
     После MAX_CLARIFICATION_ATTEMPTS агент переключается на fallback (RAG).
+    """
+
+    address_validation_attempts: int
+    """
+    Отдельный счётчик попыток валидации АДРЕСА.
+    Если пользователь N раз даёт невалидный адрес — fallback на RAG.
     """
 
     # =========================================================================
@@ -187,6 +193,7 @@ def get_default_hybrid_v2_state() -> dict[str, Any]:
         'clarification_question': None,
         'clarification_type': None,
         'clarification_attempts': 0,
+        'address_validation_attempts': 0,
         # Fallback
         'fallback_context': None,
         # Tool execution

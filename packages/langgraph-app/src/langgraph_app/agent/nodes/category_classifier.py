@@ -20,6 +20,10 @@ CATEGORY_CLASSIFIER_PROMPT = """Ты — классификатор запрос
 
 Определи категорию запроса пользователя. ВАЖНО: выбирай ОДНУ наиболее подходящую категорию!
 
+## КРИТИЧЕСКИ ВАЖНО: Смена темы
+Если пользователь ЯВНО меняет тему (спрашивает о чём-то ДРУГОМ), игнорируй предыдущую категорию!
+Например: после вопросов о ветклиниках пользователь спрашивает "А что есть для пенсионеров" — это НОВАЯ тема → pensioner
+
 ## Категории:
 
 ### Geo / Адреса
@@ -37,7 +41,7 @@ CATEGORY_CLASSIFIER_PROMPT = """Ты — классификатор запрос
 - **pets** — ветеринарные клиники, парки для выгула собак, приюты для животных
 
 ### Активности
-- **pensioner** — ВСЕСЁ для пенсионеров: услуги, кружки, льготы, горячие линии, занятия, активности для старшего поколения
+- **pensioner** — ВСЁ для пенсионеров: услуги, кружки, льготы, горячие линии, занятия, активности для старшего поколения
 - **events** — городские мероприятия, концерты, спортивные события
 - **recreation** — спортплощадки, красивые места, туристические маршруты
 
@@ -55,6 +59,8 @@ CATEGORY_CLASSIFIER_PROMPT = """Ты — классификатор запрос
 - "Что положено пенсионерам" → pensioner
 - "Какие льготы для пенсионеров" → pensioner
 - "Льготы для ветеранов" → pensioner
+- "А что есть для пенсионеров" → pensioner (даже после вопросов о другой теме!)
+- "Какие активности для пенсионеров" → pensioner
 - "Какие школы есть рядом с моим домом" → school
 - "Детский сад в Калининском районе" → kindergarten
 - "Как записать ребенка в детский сад" → rag (это вопрос о ПРОЦЕДУРЕ!)
@@ -114,7 +120,11 @@ def classify_category_node(state: HybridStateV2) -> dict:
             reasoning=result.reasoning,
         )
 
-        return {
+        # Проверяем смену категории — если категория изменилась, сбрасываем счётчики
+        previous_category = state.get("category")
+        category_changed = previous_category is not None and previous_category != result.category
+
+        update = {
             "category": result.category,
             "category_confidence": result.confidence,
             "intent": result.category.value,  # Для совместимости с v1
@@ -125,6 +135,23 @@ def classify_category_node(state: HybridStateV2) -> dict:
                 "classification_reasoning": result.reasoning,
             },
         }
+
+        # Сбрасываем счётчики при смене категории
+        if category_changed:
+            logger.info(
+                "category_changed_reset_counters",
+                from_category=previous_category.value if previous_category else None,
+                to_category=result.category.value,
+            )
+            update["clarification_attempts"] = 0
+            update["address_validation_attempts"] = 0
+            update["is_slots_complete"] = False
+            update["missing_params"] = []
+            update["extracted_address"] = None
+            update["extracted_district"] = None
+            update["address_validated"] = False
+
+        return update
 
     except Exception as e:
         logger.exception("category_classification_failed", error=str(e))
