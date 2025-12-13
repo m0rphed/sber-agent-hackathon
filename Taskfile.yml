@@ -42,6 +42,40 @@ tasks:
       - uv run --package langgraph-app python {{.LANGGRAPH_DIR}}/scripts/agent_tools.py {{.CLI_ARGS}}
 
   # ══════════════════════════════════════════════════════════════
+  # TOOLS TESTING (Happy Path - без агента)
+  # ══════════════════════════════════════════════════════════════
+
+  tools:test:
+    desc: "Запустить тесты tools (task tools:test -- --category pets)"
+    cmds:
+      - uv run python scripts/test_tools.py {{.CLI_ARGS}}
+
+  tools:test:all:
+    desc: "Запустить все тесты tools"
+    cmds:
+      - uv run python scripts/test_tools.py --category all
+
+  tools:test:verbose:
+    desc: "Все тесты с подробным выводом"
+    cmds:
+      - uv run python scripts/test_tools.py --category all --verbose
+
+  tools:smoke:
+    desc: "Быстрый smoke-тест основных tools"
+    cmds:
+      - uv run python scripts/test_tools.py smoke
+
+  tools:quick:
+    desc: "Быстрый тест одного tool (task tools:quick -- resolve-location 'метро Чернышевская')"
+    cmds:
+      - uv run python scripts/quick_test.py {{.CLI_ARGS}}
+
+  tools:help:
+    desc: "Показать все доступные команды quick_test"
+    cmds:
+      - uv run python scripts/quick_test.py --help
+
+  # ══════════════════════════════════════════════════════════════
   # RAG INDEXING
   # ══════════════════════════════════════════════════════════════
 
