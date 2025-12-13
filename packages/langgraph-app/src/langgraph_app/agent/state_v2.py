@@ -126,6 +126,22 @@ class HybridStateV2(AgentState):
     Помогает понять, как обрабатывать следующий ответ пользователя.
     """
 
+    clarification_attempts: int
+    """
+    Счётчик попыток уточнения для защиты от бесконечного цикла.
+    После MAX_CLARIFICATION_ATTEMPTS агент переключается на fallback (RAG).
+    """
+
+    # =========================================================================
+    # Fallback
+    # =========================================================================
+
+    fallback_context: str | None
+    """
+    Контекстное сообщение для fallback на RAG.
+    Объясняет пользователю почему не удалось выполнить точный поиск.
+    """
+
     # =========================================================================
     # Tool execution
     # =========================================================================
@@ -170,6 +186,9 @@ def get_default_hybrid_v2_state() -> dict[str, Any]:
         'awaiting_clarification': False,
         'clarification_question': None,
         'clarification_type': None,
+        'clarification_attempts': 0,
+        # Fallback
+        'fallback_context': None,
         # Tool execution
         'tool_outputs': [],
     }

@@ -3,16 +3,15 @@
 # Установка: https://taskfile.dev
 # Windows: scoop install task / choco install go-task / winget install Task.Task
 # ══════════════════════════════════════════════════════════════
-version: '3'
+version: "3"
 
 vars:
   PROJECT_ROOT: "{{.ROOT_DIR}}"
   LANGGRAPH_DIR: "packages/langgraph-app"
-  
+
 silent: false
 
 tasks:
-
   # ══════════════════════════════════════════════════════════════
   # AGENT TESTING (используют скрипты из scripts/)
   # ══════════════════════════════════════════════════════════════
@@ -50,16 +49,20 @@ tasks:
   # ══════════════════════════════════════════════════════════════
   # LANGGRAPH
   # ══════════════════════════════════════════════════════════════
-  
+
   langgraph:dev:
     desc: "Запустить LangGraph Studio в dev режиме"
     dir: "{{.LANGGRAPH_DIR}}"
     cmds:
-      - uv run langgraph dev --config langgraph.json
+      # --allow-blocking нужен т.к. torch/transformers делают sync I/O при импорте
+      - uv run langgraph dev --allow-blocking
 
   langgraph:up:
     desc: "Запустить LangGraph Server"
     dir: "{{.LANGGRAPH_DIR}}"
+    env:
+      # Изолирует blocking операции в отдельные event loops
+      BG_JOB_ISOLATED_LOOPS: "true"
     cmds:
       - uv run langgraph up --config langgraph.json
 
