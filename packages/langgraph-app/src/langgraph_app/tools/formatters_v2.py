@@ -7,12 +7,9 @@
 API поля проверены по дампам в notebooks/api_dumps/
 """
 
-from __future__ import annotations
-
-import re
 from datetime import datetime
+import re
 from typing import Any
-
 
 # =============================================================================
 # Helper Functions
@@ -51,7 +48,9 @@ def _format_distance(distance: float | None) -> str:
 
 
 def _format_date(date_str: str | None, fmt: str = '%d.%m.%Y') -> str:
-    """Форматировать дату."""
+    """
+    Форматировать дату
+    """
     if not date_str:
         return ''
     try:
@@ -101,7 +100,9 @@ def _pagination_info(offset: int, shown: int, total: int, item_name: str = 'эл
     lines = [f'\n📊 Показано {offset + 1}-{shown_end} из {total}']
     if shown_end < total:
         remaining = total - shown_end
-        lines.append(f'💡 Ещё {remaining} {item_name}. Используйте offset={shown_end} для следующих.')
+        lines.append(
+            f'💡 Ещё {remaining} {item_name}. Используйте offset={shown_end} для следующих.'
+        )
     return '\n'.join(lines)
 
 
@@ -139,7 +140,9 @@ def format_mfc(mfc: dict) -> str:
 
 
 def format_mfc_list(mfc_list: list[dict], limit: int = 10, offset: int = 0) -> str:
-    """Форматировать список МФЦ с пагинацией."""
+    """
+    Форматировать список МФЦ с пагинацией
+    """
     if not mfc_list:
         return 'МФЦ не найдены.'
 
@@ -165,7 +168,9 @@ def format_mfc_list(mfc_list: list[dict], limit: int = 10, offset: int = 0) -> s
 
 
 def format_polyclinic(poly: dict) -> str:
-    """Форматировать поликлинику."""
+    """
+    Форматировать поликлинику
+    """
     lines = []
 
     # API возвращает clinic_name, не name
@@ -192,7 +197,9 @@ def format_polyclinic(poly: dict) -> str:
 
 
 def format_polyclinics_list(polys: list[dict], limit: int = 10, offset: int = 0) -> str:
-    """Форматировать список поликлиник с пагинацией."""
+    """
+    Форматировать список поликлиник с пагинацией
+    """
     if not polys:
         return 'Поликлиники не найдены.'
 

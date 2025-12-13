@@ -12,8 +12,6 @@
     docs = retriever.search("запрос", k=5)
 """
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -239,7 +237,7 @@ def get_retriever(
         elif retriever_type == 'opensearch':
             retriever = OpenSearchRetriever()
         else:
-            raise ValueError(f"Unknown retriever type: {retriever_type}")
+            raise ValueError(f'Unknown retriever type: {retriever_type}')
 
         if not force_new:
             _retriever_cache[retriever_type] = retriever

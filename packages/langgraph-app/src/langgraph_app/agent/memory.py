@@ -6,9 +6,6 @@
 - Ограничение размера истории
 - Очистка старых сессий
 """
-
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 

@@ -10,14 +10,17 @@ API: yazzh_final.ApiClientUnified (НЕ yazzh_new!)
 - Более детальные docstrings адаптированные под GigaChat
 """
 
-from __future__ import annotations
-
 from functools import wraps
 from typing import Any
 
 import httpx
 from langchain_gigachat.tools.giga_tool import giga_tool
 
+from langgraph_app.api.geo.geocoding_service import (
+    GeocodingResult,
+    geocode_address,
+    geocode_address_with_candidates,
+)
 from langgraph_app.api.yazzh_final import ApiClientUnified
 from langgraph_app.logging_config import get_logger
 
@@ -225,6 +228,72 @@ async def get_district_info_by_address(address: str) -> str:
                 return f'Адрес «{address}» находится в {district_name} районе.'
 
         return f'Информация о районе: {data}'
+
+
+# =============================================================================
+# Location Resolution Tool (для уточнения адреса)
+# =============================================================================
+
+
+def _format_location_candidates(candidates: list[GeocodingResult], query: str) -> str:
+    """Форматировать список кандидатов геокодирования."""
+    if not candidates:
+        return f"Локация '{query}' не найдена. Уточните адрес или станцию метро."
+
+    if len(candidates) == 1:
+        c = candidates[0]
+        lines = [f'✅ Найдена локация: **{c.address}**']
+        lines.append(f'📍 Координаты: {c.lat:.6f}, {c.lon:.6f}')
+        if c.district:
+            lines.append(f'🏘️ Район: {c.district}')
+        lines.append(f'🔍 Источник: {c.source}')
+        if c.building_id:
+            lines.append(f'🆔 ID здания: {c.building_id}')
+        return '\n'.join(lines)
+
+    lines = [f'Найдено несколько вариантов для «{query}»:\n']
+    for i, c in enumerate(candidates, 1):
+        lines.append(f'{i}. 📍 **{c.address}**')
+        if c.district:
+            lines.append(f'   🏘️ Район: {c.district}')
+        lines.append(f'   📌 Координаты: {c.lat:.6f}, {c.lon:.6f}')
+        if c.building_id:
+            lines.append(f'   🆔 ID: {c.building_id}')
+
+    lines.append('\n💡 Уточните, какой вариант вам нужен.')
+    return '\n'.join(lines)
+
+
+@giga_tool(
+    few_shot_examples=[
+        {'request': 'Уточни адрес Невский 10', 'params': {'query': 'Невский 10'}},
+        {'request': 'Какие координаты у метро Чернышевская?', 'params': {'query': 'метро Чернышевская'}},
+        {'request': 'Найди координаты Садовая 50', 'params': {'query': 'Садовая 50'}},
+        {'request': 'Где находится улица Большевиков 68?', 'params': {'query': 'Большевиков 68'}},
+    ]
+)
+@handle_api_errors
+async def resolve_location(query: str, limit: int = 5) -> str:
+    """
+    Уточнить адрес или станцию метро и получить координаты.
+
+    Используй эту функцию когда:
+    - Нужно получить точные координаты адреса или метро
+    - Пользователь указал неточный адрес и нужно предложить варианты
+    - Перед вызовом инструментов, требующих координаты
+
+    Args:
+        query: Адрес или станция метро. Примеры: "Невский 10", "метро Чернышевская", "Садовая 50"
+        limit: Максимальное количество кандидатов (по умолчанию 5)
+
+    Returns:
+        Информация о найденной локации с координатами или список кандидатов для выбора
+    """
+    limit = max(1, min(limit, 10))
+    logger.info('tool_call', tool='resolve_location', query=query, limit=limit)
+
+    candidates = await geocode_address_with_candidates(query, limit=limit)
+    return _format_location_candidates(candidates, query)
 
 
 # =============================================================================
@@ -971,6 +1040,186 @@ async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0, limi
 
 
 # =============================================================================
+# Address-based Pet Tools (принимают location вместо координат)
+# =============================================================================
+
+
+@giga_tool(
+    few_shot_examples=[
+        {
+            'request': 'Площадки для выгула собак около метро Чернышевская',
+            'params': {'location': 'метро Чернышевская', 'radius_km': 5.0},
+        },
+        {
+            'request': 'Где погулять с собакой рядом с Невским 10?',
+            'params': {'location': 'Невский 10', 'radius_km': 5.0},
+        },
+        {
+            'request': 'Площадки для собак у метро Площадь Восстания',
+            'params': {'location': 'метро Площадь Восстания'},
+        },
+        {
+            'request': 'Где выгулять собаку около Садовой?',
+            'params': {'location': 'Садовая', 'radius_km': 3.0},
+        },
+    ]
+)
+@handle_api_errors
+async def get_pet_parks_near(
+    location: str, radius_km: float = 5.0, limit: int = 10, offset: int = 0
+) -> str:
+    """
+    Найти площадки для выгула собак рядом с адресом или станцией метро.
+
+    РЕКОМЕНДУЕТСЯ использовать эту функцию вместо get_pet_parks, так как
+    пользователи обычно указывают адреса, а не координаты.
+
+    Args:
+        location: Адрес или станция метро. Примеры: "Невский 10", "метро Чернышевская"
+        radius_km: Радиус поиска в километрах (по умолчанию 5)
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
+
+    Returns:
+        Список площадок для выгула собак
+    """
+    from langgraph_app.tools.formatters_v2 import format_pet_parks_list
+
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_pet_parks_near', location=location, radius_km=radius_km, limit=limit, offset=offset)
+
+    # Геокодируем адрес
+    geo_result = await geocode_address(location)
+    if not geo_result:
+        return f"Не удалось определить координаты для '{location}'. Уточните адрес или станцию метро."
+
+    async with ApiClientUnified(verbose=False) as client:
+        result = await client.get_pet_parks(lat=geo_result.lat, lon=geo_result.lon, radius_km=int(radius_km))
+        data = _extract_json(result)
+
+        if not data:
+            return f'Площадки для выгула рядом с «{geo_result.address}» не найдены.'
+
+        parks = data.get('data', [])
+        formatted = format_pet_parks_list(parks, limit=limit, offset=offset)
+        return f'📍 Поиск от: {geo_result.address}\n\n{formatted}'
+
+
+@giga_tool(
+    few_shot_examples=[
+        {
+            'request': 'Ветклиника около метро Пионерская',
+            'params': {'location': 'метро Пионерская', 'radius_km': 10.0},
+        },
+        {
+            'request': 'Где ветеринар рядом с Большевиков 68?',
+            'params': {'location': 'Большевиков 68'},
+        },
+        {
+            'request': 'Ветеринарные клиники у Садовой',
+            'params': {'location': 'Садовая', 'radius_km': 5.0},
+        },
+    ]
+)
+@handle_api_errors
+async def get_vet_clinics_near(
+    location: str, radius_km: float = 10.0, limit: int = 10, offset: int = 0
+) -> str:
+    """
+    Найти ветеринарные клиники рядом с адресом или станцией метро.
+
+    РЕКОМЕНДУЕТСЯ использовать эту функцию вместо get_vet_clinics, так как
+    пользователи обычно указывают адреса, а не координаты.
+
+    Args:
+        location: Адрес или станция метро. Примеры: "Невский 10", "метро Пионерская"
+        radius_km: Радиус поиска в километрах (по умолчанию 10)
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
+
+    Returns:
+        Список ветеринарных клиник
+    """
+    from langgraph_app.tools.formatters_v2 import format_vet_clinics_list
+
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_vet_clinics_near', location=location, radius_km=radius_km, limit=limit, offset=offset)
+
+    geo_result = await geocode_address(location)
+    if not geo_result:
+        return f"Не удалось определить координаты для '{location}'. Уточните адрес или станцию метро."
+
+    async with ApiClientUnified(verbose=False) as client:
+        result = await client.get_vet_clinics(lat=geo_result.lat, lon=geo_result.lon, radius_km=int(radius_km))
+        data = _extract_json(result)
+
+        if not data:
+            return f'Ветклиники рядом с «{geo_result.address}» не найдены.'
+
+        clinics = data.get('data', [])
+        formatted = format_vet_clinics_list(clinics, limit=limit, offset=offset)
+        return f'📍 Поиск от: {geo_result.address}\n\n{formatted}'
+
+
+@giga_tool(
+    few_shot_examples=[
+        {
+            'request': 'Приюты для животных около метро Купчино',
+            'params': {'location': 'метро Купчино', 'radius_km': 10.0},
+        },
+        {
+            'request': 'Где приют для кошек рядом с Невским?',
+            'params': {'location': 'Невский проспект'},
+        },
+    ]
+)
+@handle_api_errors
+async def get_pet_shelters_near(
+    location: str, radius_km: float = 10.0, limit: int = 10, offset: int = 0
+) -> str:
+    """
+    Найти приюты для животных рядом с адресом или станцией метро.
+
+    РЕКОМЕНДУЕТСЯ использовать эту функцию вместо get_pet_shelters, так как
+    пользователи обычно указывают адреса, а не координаты.
+
+    Args:
+        location: Адрес или станция метро. Примеры: "метро Купчино", "Невский 10"
+        radius_km: Радиус поиска в километрах (по умолчанию 10)
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
+
+    Returns:
+        Список приютов с информацией о посещении
+    """
+    from langgraph_app.tools.formatters_v2 import format_shelters_list
+
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_pet_shelters_near', location=location, radius_km=radius_km, limit=limit, offset=offset)
+
+    geo_result = await geocode_address(location)
+    if not geo_result:
+        return f"Не удалось определить координаты для '{location}'. Уточните адрес или станцию метро."
+
+    async with ApiClientUnified(verbose=False) as client:
+        result = await client.get_mypets_shelters(lat=geo_result.lat, lon=geo_result.lon, radius_km=int(radius_km))
+        data = _extract_json(result)
+
+        if not data:
+            return f'Приюты рядом с «{geo_result.address}» не найдены.'
+
+        shelters = data.get('data', [])
+        formatted = format_shelters_list(shelters, limit=limit, offset=offset)
+        return f'📍 Поиск от: {geo_result.address}\n\n{formatted}'
+
+
+# =============================================================================
 # Events Tools
 # =============================================================================
 
@@ -1036,6 +1285,79 @@ async def get_city_events(
 
         events = data.get('data', [])
         return format_events_list(events, limit=limit, offset=offset)
+
+
+@giga_tool(
+    few_shot_examples=[
+        {
+            'request': 'Мероприятия около метро Невский проспект',
+            'params': {'location': 'метро Невский проспект', 'radius_km': 10.0},
+        },
+        {
+            'request': 'Что интересного рядом с Садовой 50?',
+            'params': {'location': 'Садовая 50'},
+        },
+        {
+            'request': 'События у метро Чернышевская',
+            'params': {'location': 'метро Чернышевская', 'radius_km': 5.0},
+        },
+    ]
+)
+@handle_api_errors
+async def get_city_events_near(
+    location: str,
+    radius_km: float = 10.0,
+    limit: int = 10,
+    offset: int = 0,
+) -> str:
+    """
+    Найти мероприятия в городе рядом с адресом или станцией метро.
+
+    РЕКОМЕНДУЕТСЯ использовать эту функцию вместо get_city_events, так как
+    пользователи обычно указывают адреса, а не координаты.
+
+    Args:
+        location: Адрес или станция метро. Примеры: "метро Невский", "Садовая 50"
+        radius_km: Радиус поиска в километрах
+        limit: Максимальное количество в ответе (по умолчанию 10, максимум 30)
+        offset: Смещение для пагинации (по умолчанию 0)
+
+    Returns:
+        Список мероприятий с датами и местами проведения
+    """
+    from datetime import datetime, timedelta
+
+    from langgraph_app.tools.formatters_v2 import format_events_list
+
+    limit = max(1, min(limit, 30))
+    offset = max(0, offset)
+
+    logger.info('tool_call', tool='get_city_events_near', location=location, limit=limit, offset=offset)
+
+    geo_result = await geocode_address(location)
+    if not geo_result:
+        return f"Не удалось определить координаты для '{location}'. Уточните адрес или станцию метро."
+
+    start_date = datetime.now()
+    end_date = start_date + timedelta(days=30)
+
+    async with ApiClientUnified(verbose=False) as client:
+        result = await client.get_events(
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
+            lat=geo_result.lat,
+            lon=geo_result.lon,
+            radius_km=int(radius_km),
+            count=100,
+        )
+        data = _extract_json(result)
+
+        if not data:
+            return f'Мероприятия рядом с «{geo_result.address}» не найдены.'
+
+        events = data.get('data', [])
+        formatted = format_events_list(events, limit=limit, offset=offset)
+        return f'📍 Поиск от: {geo_result.address}\n\n{formatted}'
 
 
 @giga_tool(
@@ -1338,6 +1660,57 @@ async def get_recycling_points(lat: float, lon: float, count: int = 5) -> str:
         return format_recycling_by_category(categories)
 
 
+@giga_tool(
+    few_shot_examples=[
+        {
+            'request': 'Пункты сбора мусора около метро Площадь Восстания',
+            'params': {'location': 'метро Площадь Восстания', 'count': 5},
+        },
+        {
+            'request': 'Где сдать вторсырье рядом с Невским 10?',
+            'params': {'location': 'Невский 10'},
+        },
+        {
+            'request': 'Раздельный сбор мусора у метро Чернышевская',
+            'params': {'location': 'метро Чернышевская'},
+        },
+    ]
+)
+@handle_api_errors
+async def get_recycling_points_near(location: str, count: int = 5) -> str:
+    """
+    Найти ближайшие пункты переработки отходов рядом с адресом или метро.
+
+    РЕКОМЕНДУЕТСЯ использовать эту функцию вместо get_recycling_points, так как
+    пользователи обычно указывают адреса, а не координаты.
+
+    Args:
+        location: Адрес или станция метро. Примеры: "метро Площадь Восстания", "Невский 10"
+        count: Количество результатов
+
+    Returns:
+        Пункты приёма вторсырья по категориям
+    """
+    from langgraph_app.tools.formatters_v2 import format_recycling_by_category
+
+    logger.info('tool_call', tool='get_recycling_points_near', location=location)
+
+    geo_result = await geocode_address(location)
+    if not geo_result:
+        return f"Не удалось определить координаты для '{location}'. Уточните адрес или станцию метро."
+
+    async with ApiClientUnified(verbose=False) as client:
+        result = await client.get_recycling_nearest(lat=geo_result.lat, lon=geo_result.lon, count=count)
+        data = _extract_json(result)
+
+        if not data:
+            return f'Пункты переработки рядом с «{geo_result.address}» не найдены.'
+
+        categories = data.get('data', data) if isinstance(data, dict) else data
+        formatted = format_recycling_by_category(categories)
+        return f'📍 Поиск от: {geo_result.address}\n\n{formatted}'
+
+
 # =============================================================================
 # Infrastructure Tools
 # =============================================================================
@@ -1422,8 +1795,9 @@ async def get_road_works(district: str, count: int = 10) -> str:
 # =============================================================================
 
 ALL_TOOLS_GIGA = [
-    # Geo / Address
+    # Geo / Address / Location
     search_address,
+    resolve_location,  # NEW: уточнение адреса с кандидатами
     get_districts_list,
     get_district_info,
     get_district_info_by_address,
@@ -1441,12 +1815,16 @@ ALL_TOOLS_GIGA = [
     get_management_company,
     # Kindergartens
     get_kindergartens_by_district,
-    # Pets
-    get_pet_parks,
-    get_vet_clinics,
-    get_pet_shelters,
-    # Events
-    get_city_events,
+    # Pets (address-based RECOMMENDED)
+    get_pet_parks_near,      # NEW: по адресу/метро
+    get_vet_clinics_near,    # NEW: по адресу/метро
+    get_pet_shelters_near,   # NEW: по адресу/метро
+    get_pet_parks,           # координатная версия (legacy)
+    get_vet_clinics,         # координатная версия (legacy)
+    get_pet_shelters,        # координатная версия (legacy)
+    # Events (address-based RECOMMENDED)
+    get_city_events_near,    # NEW: по адресу/метро
+    get_city_events,         # координатная версия (legacy)
     get_sport_events,
     # Pensioner
     get_pensioner_services,
@@ -1456,8 +1834,9 @@ ALL_TOOLS_GIGA = [
     # Tourism
     get_beautiful_places,
     get_tourist_routes,
-    # Recycling
-    get_recycling_points,
+    # Recycling (address-based RECOMMENDED)
+    get_recycling_points_near,  # NEW: по адресу/метро
+    get_recycling_points,       # координатная версия (legacy)
     # Infrastructure
     get_disconnections,
     get_road_works,
@@ -1465,18 +1844,18 @@ ALL_TOOLS_GIGA = [
 
 # Группировка по категориям для registry
 TOOLS_BY_CATEGORY_GIGA = {
-    'address': [search_address, get_district_info_by_address],
+    'address': [search_address, resolve_location, get_district_info_by_address],
     'district': [get_districts_list, get_district_info],
     'mfc': [find_nearest_mfc, get_mfc_by_district, get_all_mfc],
     'polyclinic': [get_polyclinics_by_address],
     'school': [get_schools_by_address, get_schools_in_district, get_school_by_id],
     'management_company': [get_management_company],
     'kindergarten': [get_kindergartens_by_district],
-    'pets': [get_pet_parks, get_vet_clinics, get_pet_shelters],
-    'events': [get_city_events, get_sport_events],
+    'pets': [get_pet_parks_near, get_vet_clinics_near, get_pet_shelters_near, get_pet_parks, get_vet_clinics, get_pet_shelters],
+    'events': [get_city_events_near, get_city_events, get_sport_events],
     'pensioner': [get_pensioner_services, get_pensioner_hotlines],
     'sport': [get_sportgrounds],
     'tourism': [get_beautiful_places, get_tourist_routes],
-    'recycling': [get_recycling_points],
+    'recycling': [get_recycling_points_near, get_recycling_points],
     'infrastructure': [get_disconnections, get_road_works],
 }

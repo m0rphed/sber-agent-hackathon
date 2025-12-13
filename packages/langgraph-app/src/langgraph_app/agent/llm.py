@@ -3,17 +3,14 @@
 
 Использует централизованную конфигурацию из app.config.
 """
-
-from __future__ import annotations
-
 from langchain_gigachat import GigaChat
 
 from langgraph_app.config import (
+    AgentConfig,
+    get_agent_config,
     get_gigachat_credentials,
     get_gigachat_scope,
     get_gigachat_verify_ssl,
-    AgentConfig,
-    get_agent_config,
 )
 
 

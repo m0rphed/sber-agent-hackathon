@@ -15,9 +15,6 @@
     print(config.chunking.chunk_size)  # 800
     print(config.search.k)  # 5
 """
-
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
