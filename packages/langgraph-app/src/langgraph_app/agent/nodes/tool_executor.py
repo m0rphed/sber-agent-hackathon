@@ -4,8 +4,7 @@
 Использует ReAct агента с подмножеством tools, соответствующим категории запроса.
 """
 
-# from langchain.agents import create_agent
-from langchain_classic.agents import create_react_agent
+from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 
 from langgraph_app.agent.llm import get_llm_for_tools
@@ -23,7 +22,7 @@ logger = get_logger(__name__)
 TOOL_AGENT_PROMPT_TEMPLATE = load_prompt('tool_agent_system.txt')
 
 
-def execute_tools_node(state: HybridStateV2) -> dict:
+async def execute_tools_node(state: HybridStateV2) -> dict:
     """
     Выполняет tools для выбранной категории.
 
@@ -79,19 +78,19 @@ def execute_tools_node(state: HybridStateV2) -> dict:
         context = '\n'.join(context_parts)
         enriched_query = f'{context}\n\nЗапрос пользователя: {query}' if context else query
 
-        # Создаём ReAct агента с подмножеством tools
-        react_agent = create_react_agent(
-            llm=llm,
+        # Создаём агента с langchain.agents.create_agent (новое API)
+        react_agent = create_agent(
+            model=llm,
             tools=tools,
-            prompt=system_prompt,
+            system_prompt=system_prompt,
         )
 
         # Формируем сообщения
         history = get_chat_history(state, max_messages=agent_config.memory.context_window_size - 2)
         messages = list(history) + [HumanMessage(content=enriched_query)]
 
-        # Запускаем агента
-        result = react_agent.invoke(
+        # Запускаем агента асинхронно (tools async!)
+        result = await react_agent.ainvoke(
             {'messages': messages},
             config={'recursion_limit': agent_config.memory.recursion_limit},
         )

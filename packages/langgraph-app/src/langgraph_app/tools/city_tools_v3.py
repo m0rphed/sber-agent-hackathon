@@ -22,8 +22,8 @@ from langgraph_app.logging_config import get_logger
 logger = get_logger(__name__)
 
 API_UNAVAILABLE_MESSAGE = (
-    "⚠️ Сервис временно недоступен. Пожалуйста, попробуйте позже или обратитесь "
-    "на портал «Я здесь живу»: https://yazzh.ru"
+    '⚠️ Сервис временно недоступен. Пожалуйста, попробуйте позже или обратитесь '
+    'на портал «Я здесь живу»: https://yazzh.ru'
 )
 
 
@@ -40,20 +40,20 @@ def handle_api_errors(func):
         try:
             return await func(*args, **kwargs)
         except (httpx.TimeoutException, httpx.ConnectError) as e:
-            logger.error("api_unavailable", tool=func.__name__, error=str(e))
+            logger.error('api_unavailable', tool=func.__name__, error=str(e))
             return API_UNAVAILABLE_MESSAGE
         except Exception as e:
-            logger.error("tool_error", tool=func.__name__, error=str(e))
-            return f"Ошибка при выполнении запроса: {e}"
+            logger.error('tool_error', tool=func.__name__, error=str(e))
+            return f'Ошибка при выполнении запроса: {e}'
 
     return wrapper
 
 
 def _extract_json(result: dict[str, Any]) -> Any | None:
     """Извлечь JSON из результата API."""
-    if result.get("status_code") != 200:
+    if result.get('status_code') != 200:
         return None
-    return result.get("json")
+    return result.get('json')
 
 
 # =============================================================================
@@ -75,7 +75,7 @@ async def search_address(query: str) -> str:
     Returns:
         Список найденных адресов или сообщение об ошибке
     """
-    logger.info("tool_call", tool="search_address", query=query)
+    logger.info('tool_call', tool='search_address', query=query)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.search_building_full_text_search(query=query, count=5)
@@ -85,21 +85,23 @@ async def search_address(query: str) -> str:
             return f"Адрес '{query}' не найден. Уточните запрос."
 
         # Данные могут быть списком или dict с ключом data/results
-        buildings = data if isinstance(data, list) else data.get("data") or data.get("results") or []
+        buildings = (
+            data if isinstance(data, list) else data.get('data') or data.get('results') or []
+        )
 
         if not buildings:
             return f"Адрес '{query}' не найден. Уточните запрос."
 
         if len(buildings) == 1:
             b = buildings[0]
-            return f"Найден адрес: {b.get('full_address', b.get('address', str(b)))}"
+            return f'Найден адрес: {b.get("full_address", b.get("address", str(b)))}'
 
-        lines = ["Найдено несколько адресов. Уточните, какой из них вам нужен:\n"]
+        lines = ['Найдено несколько адресов. Уточните, какой из них вам нужен:\n']
         for i, b in enumerate(buildings[:5], 1):
-            addr = b.get("full_address") or b.get("address") or str(b)
-            lines.append(f"{i}. {addr}")
+            addr = b.get('full_address') or b.get('address') or str(b)
+            lines.append(f'{i}. {addr}')
 
-        return "\n".join(lines)
+        return '\n'.join(lines)
 
 
 @tool
@@ -113,26 +115,26 @@ async def get_districts_list() -> str:
     Returns:
         Список районов СПб
     """
-    logger.info("tool_call", tool="get_districts_list")
+    logger.info('tool_call', tool='get_districts_list')
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_districts()
         data = _extract_json(result)
 
         if not data:
-            return "Не удалось получить список районов."
+            return 'Не удалось получить список районов.'
 
-        districts = data if isinstance(data, list) else data.get("data") or []
+        districts = data if isinstance(data, list) else data.get('data') or []
 
-        lines = ["Районы Санкт-Петербурга:\n"]
+        lines = ['Районы Санкт-Петербурга:\n']
         for d in districts:
             if isinstance(d, dict):
-                name = d.get("name") or d.get("district") or str(d)
+                name = d.get('name') or d.get('district') or str(d)
             else:
                 name = str(d)
-            lines.append(f"• {name}")
+            lines.append(f'• {name}')
 
-        return "\n".join(lines)
+        return '\n'.join(lines)
 
 
 @tool
@@ -147,7 +149,7 @@ async def get_district_info(district: str) -> str:
     Returns:
         Информация о районе
     """
-    logger.info("tool_call", tool="get_district_info", district=district)
+    logger.info('tool_call', tool='get_district_info', district=district)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_district_info_by_name(district_name=district)
@@ -157,19 +159,19 @@ async def get_district_info(district: str) -> str:
             return f"Информация о районе '{district}' не найдена."
 
         # Форматируем данные
-        lines = [f"📍 Район: {district}\n"]
+        lines = [f'📍 Район: {district}\n']
 
         if isinstance(data, dict):
-            if "population" in data:
-                lines.append(f"👥 Население: {data['population']}")
-            if "area" in data:
-                lines.append(f"📐 Площадь: {data['area']} км²")
-            if "municipalities" in data:
-                munis = data["municipalities"]
+            if 'population' in data:
+                lines.append(f'👥 Население: {data["population"]}')
+            if 'area' in data:
+                lines.append(f'📐 Площадь: {data["area"]} км²')
+            if 'municipalities' in data:
+                munis = data['municipalities']
                 if munis:
-                    lines.append(f"🏘 Муниципальные образования: {len(munis)}")
+                    lines.append(f'🏘 Муниципальные образования: {len(munis)}')
 
-        return "\n".join(lines) if len(lines) > 1 else str(data)
+        return '\n'.join(lines) if len(lines) > 1 else str(data)
 
 
 @tool
@@ -184,7 +186,7 @@ async def get_district_info_by_address(address: str) -> str:
     Returns:
         Информация о районе, в котором находится адрес
     """
-    logger.info("tool_call", tool="get_district_info_by_address", address=address)
+    logger.info('tool_call', tool='get_district_info_by_address', address=address)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_district_info_by_building(address_query=address)
@@ -194,11 +196,11 @@ async def get_district_info_by_address(address: str) -> str:
             return f"Район для адреса '{address}' не определён."
 
         if isinstance(data, dict):
-            district_name = data.get("district") or data.get("name")
+            district_name = data.get('district') or data.get('name')
             if district_name:
-                return f"Адрес «{address}» находится в {district_name} районе."
+                return f'Адрес «{address}» находится в {district_name} районе.'
 
-        return f"Информация о районе: {data}"
+        return f'Информация о районе: {data}'
 
 
 # =============================================================================
@@ -209,33 +211,33 @@ async def get_district_info_by_address(address: str) -> str:
 def _format_mfc_list(data: Any) -> str:
     """Форматировать список МФЦ для чата."""
     if not data:
-        return "МФЦ не найдены."
+        return 'МФЦ не найдены.'
 
-    mfc_list = data if isinstance(data, list) else data.get("data") or data.get("results") or [data]
+    mfc_list = data if isinstance(data, list) else data.get('data') or data.get('results') or [data]
 
     if not mfc_list:
-        return "МФЦ не найдены."
+        return 'МФЦ не найдены.'
 
     lines = []
     for mfc in mfc_list[:5]:  # Ограничиваем 5 результатами
         if isinstance(mfc, dict):
-            name = mfc.get("name") or mfc.get("title") or "МФЦ"
-            address = mfc.get("address") or mfc.get("full_address") or ""
-            phone = mfc.get("phone") or mfc.get("phones") or ""
-            schedule = mfc.get("schedule") or mfc.get("work_time") or ""
+            name = mfc.get('name') or mfc.get('title') or 'МФЦ'
+            address = mfc.get('address') or mfc.get('full_address') or ''
+            phone = mfc.get('phone') or mfc.get('phones') or ''
+            schedule = mfc.get('schedule') or mfc.get('work_time') or ''
 
-            lines.append(f"📋 **{name}**")
+            lines.append(f'📋 **{name}**')
             if address:
-                lines.append(f"   📍 {address}")
+                lines.append(f'   📍 {address}')
             if phone:
-                lines.append(f"   📞 {phone}")
+                lines.append(f'   📞 {phone}')
             if schedule:
-                lines.append(f"   🕐 {schedule}")
-            lines.append("")
+                lines.append(f'   🕐 {schedule}')
+            lines.append('')
         else:
             lines.append(str(mfc))
 
-    return "\n".join(lines) if lines else "МФЦ не найдены."
+    return '\n'.join(lines) if lines else 'МФЦ не найдены.'
 
 
 @tool
@@ -250,7 +252,7 @@ async def find_nearest_mfc(address: str) -> str:
     Returns:
         Информация о ближайших МФЦ
     """
-    logger.info("tool_call", tool="find_nearest_mfc", address=address)
+    logger.info('tool_call', tool='find_nearest_mfc', address=address)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_mfc_nearest_by_coords(address_query=address, distance_km=5)
@@ -279,7 +281,7 @@ async def get_mfc_by_district(district: str) -> str:
     Returns:
         Список МФЦ в указанном районе
     """
-    logger.info("tool_call", tool="get_mfc_by_district", district=district)
+    logger.info('tool_call', tool='get_mfc_by_district', district=district)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_mfc_by_district(district=district)
@@ -300,30 +302,30 @@ async def get_all_mfc() -> str:
     Returns:
         Список всех МФЦ
     """
-    logger.info("tool_call", tool="get_all_mfc")
+    logger.info('tool_call', tool='get_all_mfc')
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_all_mfc()
         data = _extract_json(result)
 
         if not data:
-            return "Не удалось получить список МФЦ."
+            return 'Не удалось получить список МФЦ.'
 
-        mfc_list = data if isinstance(data, list) else data.get("data") or []
+        mfc_list = data if isinstance(data, list) else data.get('data') or []
 
-        lines = [f"📋 Всего МФЦ: {len(mfc_list)}\n"]
+        lines = [f'📋 Всего МФЦ: {len(mfc_list)}\n']
 
         # Группируем по районам
         by_district: dict[str, list] = {}
         for mfc in mfc_list:
             if isinstance(mfc, dict):
-                district = mfc.get("district") or "Другие"
+                district = mfc.get('district') or 'Другие'
                 by_district.setdefault(district, []).append(mfc)
 
         for district, mfcs in sorted(by_district.items()):
-            lines.append(f"\n**{district} район** ({len(mfcs)} МФЦ)")
+            lines.append(f'\n**{district} район** ({len(mfcs)} МФЦ)')
 
-        return "\n".join(lines)
+        return '\n'.join(lines)
 
 
 # =============================================================================
@@ -334,33 +336,33 @@ async def get_all_mfc() -> str:
 def _format_polyclinics(data: Any) -> str:
     """Форматировать список поликлиник для чата."""
     if not data:
-        return "Поликлиники не найдены."
+        return 'Поликлиники не найдены.'
 
-    clinics = data if isinstance(data, list) else data.get("data") or data.get("results") or [data]
+    clinics = data if isinstance(data, list) else data.get('data') or data.get('results') or [data]
 
     if not clinics:
-        return "Поликлиники не найдены."
+        return 'Поликлиники не найдены.'
 
     lines = []
     for clinic in clinics[:5]:
         if isinstance(clinic, dict):
-            name = clinic.get("name") or clinic.get("title") or "Поликлиника"
-            address = clinic.get("address") or clinic.get("full_address") or ""
-            phone = clinic.get("phone") or clinic.get("phones") or ""
-            clinic_type = clinic.get("type") or clinic.get("clinic_type") or ""
+            name = clinic.get('name') or clinic.get('title') or 'Поликлиника'
+            address = clinic.get('address') or clinic.get('full_address') or ''
+            phone = clinic.get('phone') or clinic.get('phones') or ''
+            clinic_type = clinic.get('type') or clinic.get('clinic_type') or ''
 
-            lines.append(f"🏥 **{name}**")
+            lines.append(f'🏥 **{name}**')
             if clinic_type:
-                lines.append(f"   Тип: {clinic_type}")
+                lines.append(f'   Тип: {clinic_type}')
             if address:
-                lines.append(f"   📍 {address}")
+                lines.append(f'   📍 {address}')
             if phone:
-                lines.append(f"   📞 {phone}")
-            lines.append("")
+                lines.append(f'   📞 {phone}')
+            lines.append('')
         else:
             lines.append(str(clinic))
 
-    return "\n".join(lines) if lines else "Поликлиники не найдены."
+    return '\n'.join(lines) if lines else 'Поликлиники не найдены.'
 
 
 @tool
@@ -375,7 +377,7 @@ async def get_polyclinics_by_address(address: str) -> str:
     Returns:
         Список поликлиник, к которым прикреплён дом
     """
-    logger.info("tool_call", tool="get_polyclinics_by_address", address=address)
+    logger.info('tool_call', tool='get_polyclinics_by_address', address=address)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_polyclinics_by_building(address_query=address)
@@ -395,33 +397,33 @@ async def get_polyclinics_by_address(address: str) -> str:
 def _format_schools(data: Any) -> str:
     """Форматировать список школ для чата."""
     if not data:
-        return "Школы не найдены."
+        return 'Школы не найдены.'
 
-    schools = data if isinstance(data, list) else data.get("data") or data.get("results") or [data]
+    schools = data if isinstance(data, list) else data.get('data') or data.get('results') or [data]
 
     if not schools:
-        return "Школы не найдены."
+        return 'Школы не найдены.'
 
     lines = []
     for school in schools[:5]:
         if isinstance(school, dict):
-            name = school.get("name") or school.get("title") or school.get("short_name") or "Школа"
-            address = school.get("address") or school.get("full_address") or ""
-            phone = school.get("phone") or school.get("phones") or ""
-            school_type = school.get("type") or school.get("org_type") or ""
+            name = school.get('name') or school.get('title') or school.get('short_name') or 'Школа'
+            address = school.get('address') or school.get('full_address') or ''
+            phone = school.get('phone') or school.get('phones') or ''
+            school_type = school.get('type') or school.get('org_type') or ''
 
-            lines.append(f"🏫 **{name}**")
+            lines.append(f'🏫 **{name}**')
             if school_type:
-                lines.append(f"   Тип: {school_type}")
+                lines.append(f'   Тип: {school_type}')
             if address:
-                lines.append(f"   📍 {address}")
+                lines.append(f'   📍 {address}')
             if phone:
-                lines.append(f"   📞 {phone}")
-            lines.append("")
+                lines.append(f'   📞 {phone}')
+            lines.append('')
         else:
             lines.append(str(school))
 
-    return "\n".join(lines) if lines else "Школы не найдены."
+    return '\n'.join(lines) if lines else 'Школы не найдены.'
 
 
 @tool
@@ -436,7 +438,7 @@ async def get_schools_by_address(address: str) -> str:
     Returns:
         Список школ, к которым прикреплён дом
     """
-    logger.info("tool_call", tool="get_schools_by_address", address=address)
+    logger.info('tool_call', tool='get_schools_by_address', address=address)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_linked_schools(address_query=address)
@@ -460,7 +462,7 @@ async def get_schools_in_district(district: str) -> str:
     Returns:
         Список школ в указанном районе
     """
-    logger.info("tool_call", tool="get_schools_in_district", district=district)
+    logger.info('tool_call', tool='get_schools_in_district', district=district)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_schools_map(district=district)
@@ -484,14 +486,14 @@ async def get_school_by_id(school_id: int) -> str:
     Returns:
         Подробная информация о школе
     """
-    logger.info("tool_call", tool="get_school_by_id", school_id=school_id)
+    logger.info('tool_call', tool='get_school_by_id', school_id=school_id)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_school_by_id(school_id=school_id)
         data = _extract_json(result)
 
         if not data:
-            return f"Школа с ID {school_id} не найдена."
+            return f'Школа с ID {school_id} не найдена.'
 
         return _format_schools([data])
 
@@ -513,7 +515,7 @@ async def get_management_company(address: str) -> str:
     Returns:
         Информация об УК для указанного дома
     """
-    logger.info("tool_call", tool="get_management_company", address=address)
+    logger.info('tool_call', tool='get_management_company', address=address)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_management_company(address_query=address)
@@ -523,20 +525,20 @@ async def get_management_company(address: str) -> str:
             return f"Управляющая компания для адреса '{address}' не найдена."
 
         if isinstance(data, dict):
-            name = data.get("name") or data.get("company_name") or "УК"
-            inn = data.get("inn") or ""
-            address_uk = data.get("address") or data.get("legal_address") or ""
-            phone = data.get("phone") or data.get("phones") or ""
+            name = data.get('name') or data.get('company_name') or 'УК'
+            inn = data.get('inn') or ''
+            address_uk = data.get('address') or data.get('legal_address') or ''
+            phone = data.get('phone') or data.get('phones') or ''
 
-            lines = [f"🏢 **{name}**"]
+            lines = [f'🏢 **{name}**']
             if inn:
-                lines.append(f"   ИНН: {inn}")
+                lines.append(f'   ИНН: {inn}')
             if address_uk:
-                lines.append(f"   📍 {address_uk}")
+                lines.append(f'   📍 {address_uk}')
             if phone:
-                lines.append(f"   📞 {phone}")
+                lines.append(f'   📞 {phone}')
 
-            return "\n".join(lines)
+            return '\n'.join(lines)
 
         return str(data)
 
@@ -548,17 +550,21 @@ async def get_management_company(address: str) -> str:
 
 @tool
 @handle_api_errors
-async def get_kindergartens_by_district(district: str) -> str:
+async def get_kindergartens_by_district(district: str, limit: int = 10) -> str:
     """
     Найти детские сады в районе.
 
     Args:
         district: Название РАЙОНА (НЕ адрес!). Примеры: "Невский", "Центральный"
+        limit: Максимальное количество садов в ответе (по умолчанию 10, максимум 50)
 
     Returns:
         Список детских садов в указанном районе
     """
-    logger.info("tool_call", tool="get_kindergartens_by_district", district=district)
+    # Ограничиваем limit разумными значениями
+    limit = max(1, min(limit, 50))
+
+    logger.info('tool_call', tool='get_kindergartens_by_district', district=district, limit=limit)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_dou(district=district)
@@ -567,24 +573,34 @@ async def get_kindergartens_by_district(district: str) -> str:
         if not data:
             return f"Детские сады в районе '{district}' не найдены."
 
-        kinders = data if isinstance(data, list) else data.get("data") or [data]
+        kinders = data if isinstance(data, list) else data.get('data') or [data]
+        total = len(kinders)
 
-        lines = [f"👶 Детские сады в {district} районе:\n"]
-        for k in kinders[:10]:
+        lines = [f'👶 Детские сады в {district} районе ({total} шт.):\n']
+        for i, k in enumerate(kinders[:limit], 1):
             if isinstance(k, dict):
-                name = k.get("name") or k.get("title") or k.get("short_name") or "Детский сад"
-                addr = k.get("address") or ""
-                spots = k.get("available_spots")
+                # API возвращает doo_short, sum (свободные места), coordinates
+                name = k.get('doo_short') or k.get('name') or k.get('title') or 'Детский сад'
+                spots = k.get('sum')  # свободные места
+                status = k.get('doo_status')
+                building_id = k.get('building_id')
 
-                lines.append(f"• **{name}**")
-                if addr:
-                    lines.append(f"   📍 {addr}")
+                lines.append(f'{i}. **{name}**')
                 if spots is not None:
-                    lines.append(f"   🪑 Свободных мест: {spots}")
+                    lines.append(f'   🪑 Свободных мест: {spots}')
+                if status:
+                    lines.append(f'   📋 Статус: {status}')
+                if building_id:
+                    lines.append(f'   🆔 ID: {building_id}')
             else:
-                lines.append(f"• {k}")
+                lines.append(f'{i}. {k}')
 
-        return "\n".join(lines) if len(lines) > 1 else "Детские сады не найдены."
+        if total > limit:
+            lines.append(
+                f'\n... и ещё {total - limit} садов (используй limit={total} для полного списка)'
+            )
+
+        return '\n'.join(lines) if len(lines) > 1 else 'Детские сады не найдены.'
 
 
 # =============================================================================
@@ -606,7 +622,7 @@ async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0) -> str:
     Returns:
         Список площадок для выгула собак
     """
-    logger.info("tool_call", tool="get_pet_parks", lat=lat, lon=lon, radius_km=radius_km)
+    logger.info('tool_call', tool='get_pet_parks', lat=lat, lon=lon, radius_km=radius_km)
 
     from langgraph_app.tools.formatters import format_pet_parks_list
 
@@ -615,9 +631,9 @@ async def get_pet_parks(lat: float, lon: float, radius_km: float = 5.0) -> str:
         data = _extract_json(result)
 
         if not data:
-            return "Площадки для выгула не найдены."
+            return 'Площадки для выгула не найдены.'
 
-        parks = data.get("data", [])
+        parks = data.get('data', [])
         return format_pet_parks_list(parks)
 
 
@@ -635,7 +651,7 @@ async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0) -> st
     Returns:
         Список ветеринарных клиник
     """
-    logger.info("tool_call", tool="get_vet_clinics", lat=lat, lon=lon, radius_km=radius_km)
+    logger.info('tool_call', tool='get_vet_clinics', lat=lat, lon=lon, radius_km=radius_km)
 
     from langgraph_app.tools.formatters import format_vet_clinics_list
 
@@ -644,9 +660,9 @@ async def get_vet_clinics(lat: float, lon: float, radius_km: float = 10.0) -> st
         data = _extract_json(result)
 
         if not data:
-            return "Ветклиники не найдены."
+            return 'Ветклиники не найдены.'
 
-        clinics = data.get("data", [])
+        clinics = data.get('data', [])
         return format_vet_clinics_list(clinics)
 
 
@@ -664,7 +680,7 @@ async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0) -> s
     Returns:
         Список приютов с информацией о посещении
     """
-    logger.info("tool_call", tool="get_pet_shelters", lat=lat, lon=lon, radius_km=radius_km)
+    logger.info('tool_call', tool='get_pet_shelters', lat=lat, lon=lon, radius_km=radius_km)
 
     from langgraph_app.tools.formatters import format_shelters_list
 
@@ -673,9 +689,9 @@ async def get_pet_shelters(lat: float, lon: float, radius_km: float = 10.0) -> s
         data = _extract_json(result)
 
         if not data:
-            return "Приюты не найдены."
+            return 'Приюты не найдены.'
 
-        shelters = data.get("data", [])
+        shelters = data.get('data', [])
         return format_shelters_list(shelters)
 
 
@@ -704,7 +720,7 @@ async def get_city_events(
     Returns:
         Список мероприятий с датами и местами проведения
     """
-    logger.info("tool_call", tool="get_city_events", lat=lat, lon=lon)
+    logger.info('tool_call', tool='get_city_events', lat=lat, lon=lon)
 
     from datetime import datetime, timedelta
 
@@ -725,9 +741,9 @@ async def get_city_events(
         data = _extract_json(result)
 
         if not data:
-            return "Мероприятия не найдены."
+            return 'Мероприятия не найдены.'
 
-        events = data.get("data", [])
+        events = data.get('data', [])
         return format_events_list(events)
 
 
@@ -744,7 +760,7 @@ async def get_sport_events(district: str, count: int = 5) -> str:
     Returns:
         Список спортивных мероприятий
     """
-    logger.info("tool_call", tool="get_sport_events", district=district)
+    logger.info('tool_call', tool='get_sport_events', district=district)
 
     from langgraph_app.tools.formatters import format_sport_events_list
 
@@ -753,11 +769,11 @@ async def get_sport_events(district: str, count: int = 5) -> str:
         data = _extract_json(result)
 
         if not data:
-            return f"Спортивные мероприятия в {district} районе не найдены."
+            return f'Спортивные мероприятия в {district} районе не найдены.'
 
         # Структура: data.data.data (вложенность)
-        inner = data.get("data", {})
-        events = inner.get("data", []) if isinstance(inner, dict) else []
+        inner = data.get('data', {})
+        events = inner.get('data', []) if isinstance(inner, dict) else []
         return format_sport_events_list(events)
 
 
@@ -779,7 +795,7 @@ async def get_pensioner_services(district: str, count: int = 5) -> str:
     Returns:
         Список занятий (танцы, вокал, клубы по интересам и т.д.)
     """
-    logger.info("tool_call", tool="get_pensioner_services", district=district)
+    logger.info('tool_call', tool='get_pensioner_services', district=district)
 
     from langgraph_app.tools.formatters import format_pensioner_services_list
 
@@ -788,9 +804,9 @@ async def get_pensioner_services(district: str, count: int = 5) -> str:
         data = _extract_json(result)
 
         if not data:
-            return f"Услуги для пенсионеров в {district} районе не найдены."
+            return f'Услуги для пенсионеров в {district} районе не найдены.'
 
-        services = data.get("data", [])
+        services = data.get('data', [])
         return format_pensioner_services_list(services)
 
 
@@ -806,27 +822,27 @@ async def get_pensioner_hotlines(district: str) -> str:
     Returns:
         Телефоны горячих линий
     """
-    logger.info("tool_call", tool="get_pensioner_hotlines", district=district)
+    logger.info('tool_call', tool='get_pensioner_hotlines', district=district)
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_pensioner_hotlines_by_district(district=district)
         data = _extract_json(result)
 
         if not data:
-            return f"Горячие линии для {district} района не найдены."
+            return f'Горячие линии для {district} района не найдены.'
 
         # Форматируем вручную, т.к. структура простая
-        lines = [f"📞 Горячие линии для пенсионеров ({district} район):\n"]
+        lines = [f'📞 Горячие линии для пенсионеров ({district} район):\n']
         if isinstance(data, list):
             for item in data:
-                if phone := item.get("phone"):
-                    title = item.get("title", "")
-                    lines.append(f"• {title}: {phone}")
+                if phone := item.get('phone'):
+                    title = item.get('title', '')
+                    lines.append(f'• {title}: {phone}')
         elif isinstance(data, dict):
             for key, value in data.items():
-                lines.append(f"• {key}: {value}")
+                lines.append(f'• {key}: {value}')
 
-        return "\n".join(lines) if len(lines) > 1 else "Информация не найдена."
+        return '\n'.join(lines) if len(lines) > 1 else 'Информация не найдена.'
 
 
 # =============================================================================
@@ -847,7 +863,7 @@ async def get_sportgrounds(district: str, count: int = 5) -> str:
     Returns:
         Список спортплощадок с видами спорта
     """
-    logger.info("tool_call", tool="get_sportgrounds", district=district)
+    logger.info('tool_call', tool='get_sportgrounds', district=district)
 
     from langgraph_app.tools.formatters import format_sportgrounds_list
 
@@ -856,9 +872,9 @@ async def get_sportgrounds(district: str, count: int = 5) -> str:
         data = _extract_json(result)
 
         if not data:
-            return f"Спортплощадки в {district} районе не найдены."
+            return f'Спортплощадки в {district} районе не найдены.'
 
-        grounds = data.get("data", [])
+        grounds = data.get('data', [])
         return format_sportgrounds_list(grounds)
 
 
@@ -880,7 +896,7 @@ async def get_beautiful_places(district: str, count: int = 5) -> str:
     Returns:
         Список достопримечательностей с описанием
     """
-    logger.info("tool_call", tool="get_beautiful_places", district=district)
+    logger.info('tool_call', tool='get_beautiful_places', district=district)
 
     from langgraph_app.tools.formatters import format_beautiful_places_list
 
@@ -889,9 +905,9 @@ async def get_beautiful_places(district: str, count: int = 5) -> str:
         data = _extract_json(result)
 
         if not data:
-            return f"Достопримечательности в {district} районе не найдены."
+            return f'Достопримечательности в {district} районе не найдены.'
 
-        places = data.get("data", [])
+        places = data.get('data', [])
         return format_beautiful_places_list(places)
 
 
@@ -907,29 +923,29 @@ async def get_tourist_routes(count: int = 5) -> str:
     Returns:
         Список туристических маршрутов
     """
-    logger.info("tool_call", tool="get_tourist_routes")
+    logger.info('tool_call', tool='get_tourist_routes')
 
     async with ApiClientUnified(verbose=False) as client:
         result = await client.get_beautiful_place_routes(count=count)
         data = _extract_json(result)
 
         if not data:
-            return "Туристические маршруты не найдены."
+            return 'Туристические маршруты не найдены.'
 
-        routes = data.get("data", [])
+        routes = data.get('data', [])
         if not routes:
-            return "Туристические маршруты не найдены."
+            return 'Туристические маршруты не найдены.'
 
-        lines = [f"🗺️ Найдено маршрутов: {len(routes)}\n"]
+        lines = [f'🗺️ Найдено маршрутов: {len(routes)}\n']
         for route in routes[:count]:
-            place = route.get("place", route)
-            lines.append(f"🚶 **{place.get('title', 'Маршрут')}**")
-            if desc := place.get("description"):
-                short = desc[:150] + "..." if len(desc) > 150 else desc
-                lines.append(f"   {short}")
-            lines.append("")
+            place = route.get('place', route)
+            lines.append(f'🚶 **{place.get("title", "Маршрут")}**')
+            if desc := place.get('description'):
+                short = desc[:150] + '...' if len(desc) > 150 else desc
+                lines.append(f'   {short}')
+            lines.append('')
 
-        return "\n".join(lines)
+        return '\n'.join(lines)
 
 
 # =============================================================================
@@ -951,7 +967,7 @@ async def get_recycling_points(lat: float, lon: float, count: int = 5) -> str:
     Returns:
         Пункты приёма вторсырья по категориям
     """
-    logger.info("tool_call", tool="get_recycling_points", lat=lat, lon=lon)
+    logger.info('tool_call', tool='get_recycling_points', lat=lat, lon=lon)
 
     from langgraph_app.tools.formatters import format_recycling_by_category
 
@@ -960,10 +976,10 @@ async def get_recycling_points(lat: float, lon: float, count: int = 5) -> str:
         data = _extract_json(result)
 
         if not data:
-            return "Пункты переработки не найдены."
+            return 'Пункты переработки не найдены.'
 
         # data — это список категорий
-        categories = data.get("data", data) if isinstance(data, dict) else data
+        categories = data.get('data', data) if isinstance(data, dict) else data
         return format_recycling_by_category(categories)
 
 
@@ -984,7 +1000,7 @@ async def get_disconnections(building_id: int) -> str:
     Returns:
         Информация об отключениях или "отключений нет"
     """
-    logger.info("tool_call", tool="get_disconnections", building_id=building_id)
+    logger.info('tool_call', tool='get_disconnections', building_id=building_id)
 
     from langgraph_app.tools.formatters import format_disconnections_list
 
@@ -993,10 +1009,10 @@ async def get_disconnections(building_id: int) -> str:
         data = _extract_json(result)
 
         # 204 No Content означает отсутствие отключений
-        if result.get("status_code") == 204 or not data:
-            return "✅ Отключений не запланировано. Всё работает!"
+        if result.get('status_code') == 204 or not data:
+            return '✅ Отключений не запланировано. Всё работает!'
 
-        discs = data if isinstance(data, list) else data.get("data", [])
+        discs = data if isinstance(data, list) else data.get('data', [])
         return format_disconnections_list(discs)
 
 
@@ -1013,7 +1029,7 @@ async def get_road_works(district: str, count: int = 10) -> str:
     Returns:
         Список дорожных работ по типам
     """
-    logger.info("tool_call", tool="get_road_works", district=district)
+    logger.info('tool_call', tool='get_road_works', district=district)
 
     from langgraph_app.tools.formatters import format_road_works_list
 
@@ -1022,9 +1038,9 @@ async def get_road_works(district: str, count: int = 10) -> str:
         data = _extract_json(result)
 
         if not data:
-            return f"Информация о дорожных работах в {district} районе не найдена."
+            return f'Информация о дорожных работах в {district} районе не найдена.'
 
-        works = data.get("data", [])
+        works = data.get('data', [])
         return format_road_works_list(works)
 
 
@@ -1076,20 +1092,19 @@ ALL_TOOLS = [
 
 # Группировка по категориям для registry
 TOOLS_BY_CATEGORY = {
-    "address": [search_address, get_district_info_by_address],
-    "district": [get_districts_list, get_district_info],
-    "mfc": [find_nearest_mfc, get_mfc_by_district, get_all_mfc],
-    "polyclinic": [get_polyclinics_by_address],
-    "school": [get_schools_by_address, get_schools_in_district, get_school_by_id],
-    "housing": [get_management_company],
-    "kindergarten": [get_kindergartens_by_district],
+    'address': [search_address, get_district_info_by_address],
+    'district': [get_districts_list, get_district_info],
+    'mfc': [find_nearest_mfc, get_mfc_by_district, get_all_mfc],
+    'polyclinic': [get_polyclinics_by_address],
+    'school': [get_schools_by_address, get_schools_in_district, get_school_by_id],
+    'housing': [get_management_company],
+    'kindergarten': [get_kindergartens_by_district],
     # NEW CATEGORIES
-    "pets": [get_pet_parks, get_vet_clinics, get_pet_shelters],
-    "events": [get_city_events, get_sport_events],
-    "pensioner": [get_pensioner_services, get_pensioner_hotlines],
-    "sport": [get_sportgrounds],
-    "tourism": [get_beautiful_places, get_tourist_routes],
-    "recycling": [get_recycling_points],
-    "infrastructure": [get_disconnections, get_road_works],
+    'pets': [get_pet_parks, get_vet_clinics, get_pet_shelters],
+    'events': [get_city_events, get_sport_events],
+    'pensioner': [get_pensioner_services, get_pensioner_hotlines],
+    'sport': [get_sportgrounds],
+    'tourism': [get_beautiful_places, get_tourist_routes],
+    'recycling': [get_recycling_points],
+    'infrastructure': [get_disconnections, get_road_works],
 }
-
