@@ -18,33 +18,57 @@ tasks:
 
   agent:check:
     desc: "Проверить что агент импортируется и все компоненты работают"
-    dir: "{{.LANGGRAPH_DIR}}"
     cmds:
-      - uv run python scripts/agent_check.py
+      - uv run --package langgraph-app python {{.LANGGRAPH_DIR}}/scripts/agent_check.py
 
   agent:invoke:
     desc: "Тест агента с запросом (task agent:invoke -- найди МФЦ)"
-    dir: "{{.LANGGRAPH_DIR}}"
     cmds:
-      - uv run python scripts/agent_invoke.py {{.CLI_ARGS}}
+      - uv run --package langgraph-app python {{.LANGGRAPH_DIR}}/scripts/agent_invoke.py {{.CLI_ARGS}}
 
   agent:stream:
     desc: "Тест агента со стримингом (task agent:stream -- найди школу)"
-    dir: "{{.LANGGRAPH_DIR}}"
     cmds:
-      - uv run python scripts/agent_stream.py {{.CLI_ARGS}}
+      - uv run --package langgraph-app python {{.LANGGRAPH_DIR}}/scripts/agent_stream.py {{.CLI_ARGS}}
 
   agent:categories:
     desc: "Тест классификации категорий на примерах"
-    dir: "{{.LANGGRAPH_DIR}}"
     cmds:
-      - uv run python scripts/agent_categories.py
+      - uv run --package langgraph-app python {{.LANGGRAPH_DIR}}/scripts/agent_categories.py
 
   agent:tools:
     desc: "Показать tools для категории (task agent:tools -- pets)"
-    dir: "{{.LANGGRAPH_DIR}}"
     cmds:
-      - uv run python scripts/agent_tools.py {{.CLI_ARGS}}
+      - uv run --package langgraph-app python {{.LANGGRAPH_DIR}}/scripts/agent_tools.py {{.CLI_ARGS}}
+
+  # ══════════════════════════════════════════════════════════════
+  # RAG INDEXING
+  # ══════════════════════════════════════════════════════════════
+
+  rag:pipeline:
+    desc: "Парсинг документов с gu.spb.ru"
+    cmds:
+      - uv run --package langgraph-app python -m langgraph_app.rag.pipeline
+
+  rag:index:
+    desc: "Индексация документов (BM25 + ChromaDB)"
+    cmds:
+      - uv run --package langgraph-app python -m langgraph_app.rag.indexer
+
+  rag:reindex:
+    desc: "Полная переиндексация (удаляет старый индекс)"
+    cmds:
+      - cmd: Remove-Item -Recurse -Force data\chroma_db -ErrorAction SilentlyContinue
+        platforms: [windows]
+      - cmd: rm -rf data/chroma_db
+        platforms: [linux, darwin]
+      - uv run --package langgraph-app python -m langgraph_app.rag.indexer
+
+  rag:all:
+    desc: "Полный пайплайн: парсинг + индексация"
+    cmds:
+      - task: rag:pipeline
+      - task: rag:index
 
   # ══════════════════════════════════════════════════════════════
   # LANGGRAPH
